@@ -18,7 +18,7 @@
 /// <reference path="./typedef.d.ts" />
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
-const BCE_VERSION = "2.0.3";
+const BCE_VERSION = "2.0.3_Lilian";
 
 /*
  * Bondage Club Mod Development Kit
@@ -766,7 +766,7 @@ const BCE_BC_MOD_SDK=function(){"use strict";const VERSION="1.0.1";function Thro
 		// Version check
 		bceLog("checking for updates...");
 		fetch(
-			`https://sidiousious.gitlab.io/bce/bce.user.js?_=${
+			`https://flameshare.azureedge.net/shared/bce.user.js?_=${
 				(Date.now() / 1000 / 3600) | 0
 			}`
 		)
@@ -2139,11 +2139,23 @@ const BCE_BC_MOD_SDK=function(){"use strict";const VERSION="1.0.1";function Thro
 			"nng",
 			"mnng",
 		];
+		
+		const startSounds_CN = ["♥", "..", "~"];
+		const endSounds_CN = ["♥", "..", "..♥", "~", "~♥", "~~", "~~♥"];
+		const eggedSounds_CN = [
+			"嗯",
+			"啊",
+			"噢",
+			"呜",
+			"嗯啊",
+			"啊啊",
+		];
+	
 		/**
 		 * StutterWord will add s-stutters to the beginning of words and return 1-2 words, the original word with its stutters and a sound, based on arousal
-		 * @type {(word: string, forceStutter?: boolean) => string[]}
-		 */
-		function stutterWord(word, forceStutter) {
+		* @type {(word: string, forceStutter?: boolean, isChinese?: boolean) => string[]}
+		*/
+			function stutterWord(word, forceStutter, isChinese) {
 			if (!word?.length) {
 				return [word];
 			}
@@ -2175,33 +2187,53 @@ const BCE_BC_MOD_SDK=function(){"use strict";const VERSION="1.0.1";function Thro
 					0.5) /
 				100;
 
-			const r = Math.random();
-			for (let i = Math.min(4, Math.max(1, maxIntensity)); i >= 1; i--) {
-				if (
-					r < chanceToStutter / i ||
-					(i === 1 && forceStutter && chanceToStutter > 0)
-				) {
-					word = addStutter(word);
+			if (!isChinese) {
+				const r = Math.random();
+				for (let i = Math.min(4, Math.max(1, maxIntensity)); i >= 1; i--) {
+					if (
+						r < chanceToStutter / i ||
+						(i === 1 && forceStutter && chanceToStutter > 0)
+					) {
+						word = addStutter(word);
+					}
 				}
 			}
+
 			const results = [word];
 			if (maxIntensity > 0 && Math.random() < chanceToMakeSound) {
-				const startSound =
-					startSounds[Math.floor(Math.random() * startSounds.length)];
-				const sound =
-					eggedSounds[Math.floor(Math.random() * eggedSounds.length)];
-				const endSound =
-					endSounds[Math.floor(Math.random() * endSounds.length)];
-				results.push(" ", `${startSound}${sound}${endSound}`);
+				if (isChinese) {
+					const startSound =
+					  startSounds_CN[Math.floor(Math.random() * startSounds_CN.length)];
+					const sound =
+					  eggedSounds_CN[Math.floor(Math.random() * eggedSounds_CN.length)];
+					const endSound =
+					  endSounds_CN[Math.floor(Math.random() * endSounds_CN.length)];   
+					results.push(" ", `${startSound}${sound}${endSound}`, " ");
+				} else {
+					const startSound =
+						startSounds[Math.floor(Math.random() * startSounds.length)];
+					const sound =
+						eggedSounds[Math.floor(Math.random() * eggedSounds.length)];
+					const endSound =
+						endSounds[Math.floor(Math.random() * endSounds.length)];
+					results.push(" ", `${startSound}${sound}${endSound}`);
+				}
 			}
 			return results;
 		}
 
+		function isASCII(str, extended) {
+			return (extended ? /^[\x00-\xFF]*$/ : /^[\x00-\x7F]*$/).test(str);
+		}
+
 		w.bceMessageReplacements = (msg) => {
+			const isChinese = !isASCII(msg, true);
 			const words = [msg];
 			let firstStutter = true,
 				inOOC = false;
+			let repeatWord = "";
 			const newWords = [];
+			const maxWordLength = 3;
 			for (let i = 0; i < words.length; i++) {
 				// Handle other whitespace
 				const whitespaceIdx = words[i].search(/[\s\r\n]/u);
@@ -2217,6 +2249,11 @@ const BCE_BC_MOD_SDK=function(){"use strict";const VERSION="1.0.1";function Thro
 					[words[i]] = words[i];
 					newWords.push(words[i]);
 					continue;
+				} else if (isChinese && words[i].length > maxWordLength) {
+					// Take first maxWordLength characters as a separate word
+					let wordLength = Math.min(words[i].length / 2, maxWordLength);
+					words.splice(i + 1, 0, words[i].substring(wordLength));
+					words[i] = words[i].substring(0, wordLength);
 				}
 				// Handle OOC
 				const oocIdx = words[i].search(/[()]/u);
@@ -2243,8 +2280,17 @@ const BCE_BC_MOD_SDK=function(){"use strict";const VERSION="1.0.1";function Thro
 					newWords.push(words[i]);
 					newWords.push(" )");
 				} else if (bceSettings.stutters && !inOOC) {
-					newWords.push(...stutterWord(words[i], firstStutter));
-					firstStutter = false;
+					if (isChinese) {
+						words[i] = repeatWord + words[i];
+						repeatWord = words[i].substring(words[i].length - 1);
+						newWords.push(...stutterWord(words[i], false, true));
+						if (newWords[newWords.length - 1] !== " ") {
+							repeatWord = "";
+						}
+					} else {	
+						newWords.push(...stutterWord(words[i], firstStutter, false));
+						firstStutter = false;
+					}
 				} else {
 					newWords.push(words[i]);
 				}
