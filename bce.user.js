@@ -2390,7 +2390,7 @@ const BCE_BC_MOD_SDK=function(){"use strict";const VERSION="1.0.1";function Thro
 
 		// CommandParse patch for link OOC in whispers
 		SDK.patchFunction("CommandParse", {
-			"// Regular chat": "// Regular chat\nmsg = bceMessageReplacements(msg);",
+			"// Regular chat": "// Regular chat\nmsg = (SpeechGetTotalGagLevel(Player) > 0) ? msg : bceMessageReplacements(msg);",
 			"// The whispers get sent to the server and shown on the client directly":
 				"// The whispers get sent to the server and shown on the client directly\nmsg = bceMessageReplacements(msg);",
 		});
@@ -2408,7 +2408,7 @@ const BCE_BC_MOD_SDK=function(){"use strict";const VERSION="1.0.1";function Thro
 			"nng",
 			"mnng",
 		];
-		
+
 		const startSounds_CN = ["♥", "..", "~"];
 		const endSounds_CN = ["♥", "..", "..♥", "~", "~♥", "~~", "~~♥"];
 		const eggedSounds_CN = [
@@ -2416,10 +2416,11 @@ const BCE_BC_MOD_SDK=function(){"use strict";const VERSION="1.0.1";function Thro
 			"啊",
 			"噢",
 			"呜",
+			"嗯嗯",
 			"嗯啊",
 			"啊啊",
 		];
-	
+
 		/**
 		 * StutterWord will add s-stutters to the beginning of words and return 1-2 words, the original word with its stutters and a sound, based on arousal
 		* @type {(word: string, forceStutter?: boolean, isChinese?: boolean) => string[]}
@@ -2438,20 +2439,26 @@ const BCE_BC_MOD_SDK=function(){"use strict";const VERSION="1.0.1";function Thro
 			const maxIntensity = Math.max(
 				0,
 				...w.Player.Appearance.filter((a) => a.Property?.Intensity > -1).map(
-					(a) => a.Property.Intensity
+					(a) => a.Property.Intensity + 1
 				)
 			);
 
-			const eggedBonus = maxIntensity * 5;
+			const sumIntensity = w.Player.Appearance.filter(
+				(a) => a.Property?.Intensity > -1).map(
+				(a) => a.Property.Intensity + 1).reduce(
+				(sumIntensity, x) => sumIntensity + x, 0
+			);
+
+			const eggedBonus = maxIntensity * 5 + sumIntensity;
 			const chanceToStutter =
-				(Math.max(0, w.Player.ArousalSettings.Progress - 10 + eggedBonus) *
+				(Math.max(0, w.Player.ArousalSettings.Progress - 10 + eggedBonus / 2) *
 					0.5) /
 				100;
 
 			const chanceToMakeSound =
 				(Math.max(
 					0,
-					w.Player.ArousalSettings.Progress / 2 - 20 + eggedBonus * 2
+					w.Player.ArousalSettings.Progress / 2 - 20 + eggedBonus
 				) *
 					0.5) /
 				100;
@@ -2476,7 +2483,7 @@ const BCE_BC_MOD_SDK=function(){"use strict";const VERSION="1.0.1";function Thro
 					const sound =
 					  eggedSounds_CN[Math.floor(Math.random() * eggedSounds_CN.length)];
 					const endSound =
-					  endSounds_CN[Math.floor(Math.random() * endSounds_CN.length)];   
+					  endSounds_CN[Math.floor(Math.random() * endSounds_CN.length)];
 					results.push(" ", `${startSound}${sound}${endSound}`, " ");
 				} else {
 					const startSound =
@@ -2506,7 +2513,7 @@ const BCE_BC_MOD_SDK=function(){"use strict";const VERSION="1.0.1";function Thro
 			for (let i = 0; i < words.length; i++) {
 				// Handle other whitespace
 				const whitespaceIdx = words[i].search(/[\s\r\n]/u);
-				if (whitespaceIdx >= 1) {
+				if (whitespaceIdx >= 1 && (!isChinese || whitespaceIdx < maxWordLength)) {
 					// Insert remainder into list of words
 					words.splice(i + 1, 0, words[i].substring(whitespaceIdx));
 					// Truncate current word to whitespace
@@ -2519,10 +2526,20 @@ const BCE_BC_MOD_SDK=function(){"use strict";const VERSION="1.0.1";function Thro
 					newWords.push(words[i]);
 					continue;
 				} else if (isChinese && words[i].length > maxWordLength) {
-					// Take first maxWordLength characters as a separate word
-					let wordLength = Math.min(words[i].length / 2, maxWordLength);
-					words.splice(i + 1, 0, words[i].substring(wordLength));
-					words[i] = words[i].substring(0, wordLength);
+					// Take first random (1 .. maxWordLength) characters as a separate word
+					// Never split in english word
+					let wordLength = 0;
+					do {
+						wordLength += Math.floor(Math.random() * maxWordLength) + 1;
+					} while (
+						isASCII(words[i].substring(wordLength - 1, wordLength)) 
+						&& wordLength < words[i].length
+					);
+					if (wordLength < maxWordLength)
+					{
+						words.splice(i + 1, 0, words[i].substring(wordLength));
+						words[i] = words[i].substring(0, wordLength);
+					}
 				}
 				// Handle OOC
 				const oocIdx = words[i].search(/[()]/u);
@@ -5275,7 +5292,48 @@ const BCE_BC_MOD_SDK=function(){"use strict";const VERSION="1.0.1";function Thro
 						{
 							const gagLevel = w.SpeechGetTotalGagLevel(w.Player);
 							if (gagLevel > 0) {
-								if (bceSettings.antiAntiGarble) {
+								if (bceSettings.antiAntiGarbleExtra) {
+									// Lilian's chinese garbler
+									let inOOC = false;
+									let inGarbled = false;
+									data.Content = `${data.Content.split("")
+										.map((c) => {
+											switch (c) {
+												case "(":
+													inOOC = true;
+													inGarbled = false;
+													return c;
+												case ")":
+													inOOC = false;
+													inGarbled = false;
+													return c;
+												default:
+													if (inOOC)
+													{
+														inGarbled = false;
+														return c;
+													} else if (Math.random() * 30 > gagLevel + 6) {
+														inGarbled = false;
+														return c;
+													} else {
+														if (!/^\p{L}/u.test(c)) {
+															inGarbled = false;
+															return c;
+														} else if (/^[\x00-\x7F]*$/.test(c)) {
+															inGarbled = false;
+															return "m";
+														} else if (inGarbled && Math.random() < 0.7) {
+															inGarbled = true;
+															return "—";
+														} else {
+															inGarbled = true;
+															return "呜";
+														}
+													}
+											}
+										})
+										.join("")}${GAGBYPASSINDICATOR}`;
+								} else if (bceSettings.antiAntiGarble) {
 									data.Content =
 										w.SpeechGarbleByGagLevel(1, data.Content) +
 										GAGBYPASSINDICATOR;
