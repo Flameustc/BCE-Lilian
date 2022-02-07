@@ -18,10 +18,7 @@
 /// <reference path="./typedef.d.ts" />
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
-<<<<<<< HEAD
-const BCE_VERSION = "2.0.3_Lilian";
-=======
-const BCE_VERSION = "2.4.5";
+const BCE_VERSION = "2.4.5_Lilian";
 
 const bceChangelog = `2.4.5
 - fixed a bug in IMs where multiple accounts would share message history within the same browser
@@ -43,7 +40,6 @@ const bceChangelog = `2.4.5
 2.4.1
 - added instant messenger (you can talk to your friends who use bcutil without installing bcutil yourself, with BCE's chat augments)
 - possible fix to reply button encoding under rare circumstances`;
->>>>>>> main
 
 /*
  * Bondage Club Mod Development Kit
