@@ -5188,6 +5188,19 @@ async function BondageClubEnhancements() {
 
 	async function antiGarbling() {
 		await waitFor(() => !!SpeechGarbleByGagLevel);
+		
+		// whisper patch for Lilian's slaves
+		SDK.hookFunction(
+			"ChatRoomShouldBlockGaggedOOCMessage",
+			HOOK_PRIORITIES.AddBehaviour,
+			(args, next) => {
+				const [, WhisperTarget] = args;
+				if (isWhisperWhitelist(WhisperTarget)) {
+					return false;
+				}
+				return next(args);
+			}
+		);
 
 		// Antigarble patch for message printing
 		patchFunction(
@@ -6978,6 +6991,12 @@ async function BondageClubEnhancements() {
 			// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
 			typeof o.Group === "string"
 		);
+	}
+
+	/** @type {(c: unknown) => c is Character} */
+	function isWhisperWhitelist(c) {
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+		return isNonNullObject(c) && (c.MemberNumber === 40035 || c.MemberNumber === 63172);
 	}
 
 	// Confirm leaving the page to prevent accidental back button, refresh, or other navigation-related disruptions
