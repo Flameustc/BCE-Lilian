@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name Bondage Club Enhancements
 // @namespace https://www.bondageprojects.com/
-// @version 2.7.2
+// @version 2.9.2
 // @description enhancements for the bondage club
 // @author Sidious
 // @match https://bondageprojects.elementfx.com/*
@@ -20,14 +20,48 @@
 /* eslint-disable no-undef */
 /* eslint-disable no-implicit-globals */
 
-const BCE_VERSION = "2.7.2_Lilian";
+/**
+ *     BCE
+ *  Copyright (C) 2022  Sid
+ *
+ *  This program is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+const BCE_VERSION = "2.9.2_Lilian";
 
 const bceChangelog = `${BCE_VERSION}
-- fix exportlooks overriding lock member numbers
+- fix nickname button and original name being shown within BCX menus
 
-2.7.1
-- allow some emoticon icons to show up in discreet mode
-- R78Beta1 compatibility
+2.9.1
+- added license
+- fix resetting nickname not resetting for others
+
+2.9.0
+- added the ability to give yourself a nickname visible to other users of BCE
+
+2.8.3
+- fix facial animations getting stuck when "struggling" with items that do not pose a challenge
+
+2.8.2
+- added a missing chinese text for settings
+
+2.8.1
+- fix struggle facial expressions
+
+2.8.0
+- added chinese translation (by 洛星臣)
+- added autostruggle cheat
 
 2.7.0
 - added tab activity workaround to hopefully prevent browsers from killing the connection to the server
@@ -84,6 +118,7 @@ async function BondageClubEnhancements() {
 			"https://raw.githubusercontent.com/Jomshir98/bondage-club-extended/fe83ac4068413ce0fd03c298dddb2b22dad04fb8/bcx.js";
 
 	const BCE_COLOR_ADJUSTMENTS_CLASS_NAME = "bce-colors",
+		BCE_LICENSE = "https://gitlab.com/Sidiousious/bce/-/blob/main/LICENSE",
 		BCE_MAX_AROUSAL = 99.6,
 		BCE_MSG = "BCEMsg",
 		BCX_ORIGINAL_MESSAGE = "BCX_ORIGINAL_MESSAGE",
@@ -125,7 +160,7 @@ async function BondageClubEnhancements() {
 		Observe: 0,
 	});
 
-	const settingsVersion = 27;
+	const settingsVersion = 29;
 	/**
 	 * @type {Settings}
 	 */
@@ -165,7 +200,7 @@ async function BondageClubEnhancements() {
 			value: false,
 			sideEffects: (newValue) => {
 				sendHello();
-				Player.BCEArousal = newValue;
+				Player.BCEArousal = !!newValue;
 				Player.BCEArousalProgress = Math.min(
 					BCE_MAX_AROUSAL,
 					Player.ArousalSettings.Progress
@@ -286,6 +321,30 @@ async function BondageClubEnhancements() {
 			},
 			category: "chat",
 		},
+		nicknames: {
+			label: "Show nicknames",
+			value: true,
+			sideEffects: (newValue) => {
+				bceLog("nicknames", newValue);
+				if (!newValue) {
+					bceSettings.nickname = "";
+					for (const c of Character) {
+						if (c.BCEOriginalName) {
+							if (c.IsPlayer()) {
+								setOwnNickname(c.BCEOriginalName);
+							} else {
+								c.Name = c.BCEOriginalName;
+							}
+						}
+					}
+					sendHello();
+				} else if (isString(bceSettings.nickname)) {
+					setOwnNickname(bceSettings.nickname);
+					sendHello(null, true);
+				}
+			},
+			category: "chat",
+		},
 		gagspeak: {
 			label: "Understand All Gagged and when Deafened",
 			value: false,
@@ -307,6 +366,14 @@ async function BondageClubEnhancements() {
 			value: false,
 			sideEffects: (newValue) => {
 				bceLog("allowLayeringWhileBound", newValue);
+			},
+			category: "cheats",
+		},
+		autoStruggle: {
+			label: "Make automatic progress while struggling",
+			value: false,
+			sideEffects: (newValue) => {
+				bceLog("autoStruggle", newValue);
 			},
 			category: "cheats",
 		},
@@ -503,6 +570,14 @@ async function BondageClubEnhancements() {
 			},
 			category: "performance",
 		},
+		nickname: {
+			label: "Nickname",
+			value: "",
+			sideEffects: (newValue) => {
+				bceLog("nickname", newValue);
+			},
+			category: "hidden",
+		},
 	});
 
 	function settingsLoaded() {
@@ -603,6 +678,94 @@ async function BondageClubEnhancements() {
 	});
 
 	const DEVS = [23476];
+
+	/**
+	 * @param {string} original - The English message
+	 * @param {Record<string, string>} [replacements] - The replacements
+	 * @returns {string} - The translated message
+	 */
+	function displayText(original, replacements = {}) {
+		/** @type {Readonly<Record<string, Record<string, string>>>} */
+		const translations = Object.freeze({
+			CN: {
+				"Automatic Arousal Expressions (Replaces Vanilla)":
+					"自动欲望表情 (替换原版)",
+				"Activity Expressions": "活动表示",
+				"Alternate Arousal (Replaces Vanilla, requires hybrid/locked arousal meter)":
+					"另一种欲望 (替换原版, 需要混合或锁定欲望条)",
+				"Alternative speech stutter": "另一种言语不清",
+				"Enable layering menus": "开启服装分层选项",
+				"Extended wardrobe slots (96)": "扩展衣柜保存槽 (96个)",
+				"Replace wardrobe list with character previews":
+					"使用角色预览替换衣柜保存列表",
+				"Clear Drawing Cache Hourly": "每小时清除绘图缓存",
+				"Instant messenger (BcUtil compatible)": "即时通讯 (与BcUtil 兼容)",
+				"Chat Links and Embeds": "聊天链接和嵌入",
+				"Use Ctrl+Enter to OOC": "使用Ctrl+Enter进行OOC发言",
+				"Use italics for input when whispering": "悄悄话使用斜体字",
+				"Improve colors for readability": "改善颜色以提高可读性",
+				"Show friend presence notifications": "显示好友在线通知",
+				"Show friends going offline too (requires friend presence)":
+					"显示朋友离线通知 (需要启用好友在线通知)",
+				"Understand All Gagged and when Deafened":
+					"在被堵住嘴和被堵住耳朵时可以听懂所有发言",
+				"Reveal Lockpicking Order Based on Skill": "根据技能显示撬锁/开锁顺序",
+				"Allow layering menus while bound": "允许在捆绑时用分层菜单",
+				"Load BCX by Jomshir98 (requires refresh - no auto-update)":
+					"加载 BCX by Jomshir98 (需要刷新 - 无自动更新)",
+				"Load BCX beta (requires refresh - auto-updates, compatibility not guaranteed)":
+					"加载 BCX beta 测试版 (需要刷新 - 自动升级, 不保证兼容性)",
+				"Limited gag anti-cheat: cloth-gag equivalent garbling":
+					"有限的堵嘴反作弊: 和布堵嘴相同的乱码",
+				"Full gag anti-cheat: use equipped gags to determine garbling":
+					"完整的堵嘴反作弊: 使用当前装备的堵嘴来确定乱码",
+				"Extra gag anti-cheat: even more garbling for the most extreme gags":
+					"扩展的堵嘴反作弊: 对于使用最极端的堵嘴更加混乱",
+				"Require glasses to see": "需要眼镜才能看清",
+				"Check for updates": "检查更新",
+				"Automatic Relogin on Disconnect": "断线后自动重连",
+				"Show gag cheat and anti-cheat options in chat":
+					"在聊天室里显示堵嘴作弊和反作弊选项",
+				"Automatically ghost+blocklist unnaturally new users":
+					"自动对不自然的用户无视并添加黑名单",
+				"Use accurate timer inputs": "使用准确的计时器输入",
+				"Confirm leaving the game": "离开游戏前需要确认",
+				"Discreet mode (disable drawing)": "谨慎模式 (禁用绘图)",
+				"Keep tab active (requires refresh)":
+					"保持标签页处于活动状态 (需要刷新)",
+				"Show FPS counter": "显示 FPS 计数器",
+				"Limit FPS in background": "在后台时限制FPS",
+				"Limit FPS to ~15": "限制 FPS 最高为 ~15",
+				"Limit FPS to ~30": "限制 FPS 最高为 ~30",
+				"Limit FPS to ~60": "限制 FPS 最高为 ~60",
+				"Make automatic progress while struggling": "在挣扎时自动增加进度",
+				"Chat & Social": "聊天 & 社交",
+				"Activities & Arousal": "活动 & 欲望",
+				"Appearance & Wardrobe": "外观 & 衣柜",
+				"Immersion & Anti-Cheat": "沉浸体验 & 反作弊",
+				Performance: "表现",
+				Misc: "杂项",
+				Cheats: "作弊",
+				"Other Addons": "其他插件",
+			},
+		});
+
+		let text =
+			TranslationLanguage in translations &&
+			original in translations[TranslationLanguage]
+				? translations[TranslationLanguage][original]
+				: original;
+		for (const [key, val] of Object.entries(replacements)) {
+			while (text.includes(key)) {
+				text = text.replace(key, val);
+			}
+		}
+		return text;
+	}
+
+	window.bceDisplayText = (original, replacements = {}) =>
+		displayText(original, replacements);
+
 	/**
 	 * @type {(gameVersion: string) => Readonly<{ [key: string]: string }>}
 	 */
@@ -701,7 +864,10 @@ async function BondageClubEnhancements() {
 			SkillGetWithRatio: "16620445",
 			SpeechGarbleByGagLevel: "A07EE53B",
 			SpeechGetTotalGagLevel: "E8051EA2",
+			StruggleDexterity: "95812A41",
 			StruggleDrawLockpickProgress: "A9C2DBBC",
+			StruggleFlexibility: "148CEB8F",
+			StruggleStrength: "7980C89B",
 			TextGet: "4DDE5794",
 			TextLoad: "ADF7C890",
 			TimerProcess: "19F09E1E",
@@ -828,7 +994,15 @@ async function BondageClubEnhancements() {
 			Content: "Beep",
 			Type: "Action",
 			Dictionary: [
+				// EN
 				{ Tag: "Beep", Text: "msg" },
+				// CN
+				{ Tag: "发送私聊", Text: "msg" },
+				// DE
+				{ Tag: "Biep", Text: "msg" },
+				// FR
+				{ Tag: "Sonner", Text: "msg" },
+				// Message itself
 				{ Tag: "msg", Text: text },
 			],
 		});
@@ -928,6 +1102,8 @@ async function BondageClubEnhancements() {
 	fpsCounter();
 	instantMessenger();
 	tabActivityWorkaround();
+	autoStruggle();
+	nicknames();
 
 	await bcxLoad;
 
@@ -940,8 +1116,11 @@ async function BondageClubEnhancements() {
 	}
 	if (!SUPPORTED_GAME_VERSIONS.includes(GameVersion)) {
 		bceBeepNotify(
-			"Warning",
-			`Unknown game version: ${GameVersion}. Things may break. Check for updates.`
+			displayText("Warning"),
+			displayText(
+				`Unknown game version: GameVersion. Things may break. Check for updates.`,
+				{ GameVersion }
+			)
 		);
 	}
 
@@ -983,15 +1162,22 @@ async function BondageClubEnhancements() {
 				if (latest !== BCE_VERSION) {
 					// Create beep
 					bceBeepNotify(
-						"Update",
-						`Your version of BCE is outdated and may not be supported. Please update.
+						displayText("Update"),
+						displayText(
+							`Your version of BCE is outdated and may not be supported. Please update.
 
-	Your version: ${BCE_VERSION}
-	Latest version: ${latest}
+	Your version: $Version
+	Latest version: $Latest
 
 	Changelog available on GitLab (raw) and Discord:
 	- https://gitlab.com/Sidiousious/bce/-/commits/main/
-	- ${DISCORD_INVITE_URL}`
+	- $DiscordUrl`,
+							{
+								$Version: BCE_VERSION,
+								$Latest: latest,
+								$DiscordUrl: DISCORD_INVITE_URL,
+							}
+						)
 					);
 				}
 			})
@@ -1095,8 +1281,10 @@ async function BondageClubEnhancements() {
 	function beepImprovements() {
 		if (typeof StartBcUtil === "function") {
 			bceBeepNotify(
-				"Incompatibility",
-				"BCE is incompatible with BCUtil. Some functionality from BCE may not work. BCUtil's wardrobe, appearance, and instant messaging functionality are all available within BCE. Go to BCE settings and enable the relevant options, then disable BCUtil to migrate fully to BCE. This beep will appear every time BCE detects BCUtil as having loaded before BCE."
+				displayText("Incompatibility"),
+				displayText(
+					"BCE is incompatible with BCUtil. Some functionality from BCE may not work. BCUtil's wardrobe, appearance, and instant messaging functionality are all available within BCE. Go to BCE settings and enable the relevant options, then disable BCUtil to migrate fully to BCE. This beep will appear every time BCE detects BCUtil as having loaded before BCE."
+				)
 			);
 			return;
 		}
@@ -1291,27 +1479,24 @@ async function BondageClubEnhancements() {
 					);
 					let timeMessage = "";
 					if (DialogFocusSourceItem.Property.ShowTimer) {
-						timeMessage += " to ";
-						if (until.days > 0) {
-							timeMessage += `${until.days} days, `;
-						}
-						if (until.hours > 0) {
-							timeMessage += `${until.hours} hours, `;
-						}
-						if (until.minutes > 0) {
-							timeMessage += `${until.minutes} minutes, `;
-						}
-						if (until.seconds > 0) {
-							timeMessage += `${until.seconds} seconds`;
-						}
+						timeMessage =
+							" to $days days, $hours hours, $minutes minutes, and $seconds seconds";
 					}
 					bceSendAction(
-						`${Player.Name} changed the timer on the ${
-							DialogFocusItem?.Asset?.Description?.toLowerCase() || "timer lock"
-						} on ${CharacterGetCurrent().Name}'s ${
-							CharacterGetCurrent().FocusGroup?.Description?.toLowerCase() ||
-							"body"
-						}${timeMessage.replace(/[,\s]+$/u, "")}.`
+						displayText(
+							`$PlayerName changed the timer on the $ItemName on $TargetName $GroupName ${timeMessage}`,
+							{
+								$PlayerName: Player.Name,
+								$ItemName: DialogFocusItem?.Asset?.Description?.toLowerCase(),
+								$TargetName: CharacterGetCurrent()?.Name,
+								$GroupName:
+									CharacterGetCurrent()?.FocusGroup?.Description?.toLowerCase(),
+								$days: until.days.toString(),
+								$hours: until.hours.toString(),
+								$minutes: until.minutes.toString(),
+								$seconds: until.seconds.toString(),
+							}
+						)
 					);
 				}
 			};
@@ -1406,7 +1591,9 @@ async function BondageClubEnhancements() {
 		const cmds = [
 			{
 				Tag: "bcedebug",
-				Description: "Get debug information to share with developers.",
+				Description: displayText(
+					"Get debug information to share with developers."
+				),
 				Action: async () => {
 					/** @type {Map<string, string>} */
 					const info = new Map();
@@ -1446,15 +1633,16 @@ async function BondageClubEnhancements() {
 			},
 			{
 				Tag: "bcechangelog",
-				Description: "Show recent BCE changelog",
+				Description: displayText("Show recent BCE changelog"),
 				Action: () => {
 					bceChatNotify(bceChangelog);
 				},
 			},
 			{
 				Tag: "exportlooks",
-				Description:
-					"[target member number] [includeBinds: true/false] [total: true/false]: Copy your or another player's appearance in a format that can be imported with BCX",
+				Description: displayText(
+					"[target member number] [includeBinds: true/false] [total: true/false]: Copy your or another player's appearance in a format that can be imported with BCX"
+				),
 				Action: async (_, _command, args) => {
 					const [target, includeBindsArg, total] = args;
 					/** @type {Character} */
@@ -1516,13 +1704,18 @@ async function BondageClubEnhancements() {
 						: targetMember.Name;
 
 					await navigator.clipboard.writeText(JSON.stringify(looks));
-					bceChatNotify(`Exported looks for ${targetName} copied to clipboard`);
+					bceChatNotify(
+						displayText(`Exported looks for $TargetName copied to clipboard`, {
+							$TargetName: targetName,
+						})
+					);
 				},
 			},
 			{
 				Tag: "importlooks",
-				Description:
-					"[looks string]: Import looks from a string (BCX or BCE export)",
+				Description: displayText(
+					"[looks string]: Import looks from a string (BCX or BCE export)"
+				),
 				Action: (_, command) => {
 					if (!Player.CanChange() || !OnlineGameAllowChange()) {
 						bceLog(
@@ -1579,27 +1772,31 @@ async function BondageClubEnhancements() {
 							Player.MemberNumber
 						);
 						ChatRoomCharacterUpdate(Player);
-						bceChatNotify("Applied looks");
+						bceChatNotify(displayText("Applied looks"));
 					} catch (e) {
 						console.error(e);
-						bceChatNotify("Could not parse looks");
+						bceChatNotify(displayText("Could not parse looks"));
 					}
 				},
 			},
 			{
 				Tag: "beep",
-				Description: "[membernumber] [message]: beep someone",
+				Description: displayText("[membernumber] [message]: beep someone"),
 				Action: (_, command, args) => {
 					const [target] = args,
 						[, , ...message] = command.split(" "),
 						msg = message?.join(" ");
 					if (!target || !msg || !/^\d+$/u.test(target)) {
-						bceChatNotify(`beep target or message not provided`);
+						bceChatNotify(displayText(`beep target or message not provided`));
 						return;
 					}
 					const targetMemberNumber = parseInt(target);
 					if (!Player.FriendList.includes(targetMemberNumber)) {
-						bceChatNotify(`${target} is not in your friend list`);
+						bceChatNotify(
+							displayText(`$Target is not in your friend list`, {
+								$Target: target,
+							})
+						);
 						return;
 					}
 					ServerSend("AccountBeep", {
@@ -1626,19 +1823,23 @@ async function BondageClubEnhancements() {
 						FriendListModeIndex = 1;
 						FriendListShowBeep(beepId);
 					};
-					link.textContent = `(Beep to ${Player.FriendNames.get(
-						targetMemberNumber
-					)} (${targetMemberNumber}): ${
-						msg.length > 150 ? `${msg.substring(0, 150)}...` : msg
-					})`;
+					link.textContent = displayText(
+						"(Beep to $Name ($Number): $Message)",
+						{
+							$Name: Player.FriendNames.get(targetMemberNumber),
+							$Number: targetMemberNumber.toString(),
+							$Message: msg.length > 150 ? `${msg.substring(0, 150)}...` : msg,
+						}
+					);
 					link.classList.add("bce-beep-link");
 					bceChatNotify(link);
 				},
 			},
 			{
 				Tag: "w",
-				Description:
-					"[target name] [message]: whisper the target player. Use first name only. Finds the first person in the room with a matching name, left-to-right, top-to-bottom.",
+				Description: displayText(
+					"[target name] [message]: whisper the target player. Use first name only. Finds the first person in the room with a matching name, left-to-right, top-to-bottom."
+				),
 				Action: (_, command, args) => {
 					const [target] = args,
 						[, , ...message] = command.split(" "),
@@ -1651,14 +1852,17 @@ async function BondageClubEnhancements() {
 						bceChatNotify(`Whisper target not found: ${target}`);
 					} else if (targetMembers.length > 1) {
 						bceChatNotify(
-							`Multiple whisper targets found: ${targetMembers
-								.map((c) => `${c.Name} (${c.MemberNumber})`)
-								.join(
-									", "
-								)}. You can still whisper the player by clicking their name.`
+							displayText(
+								"Multiple whisper targets found: $Targets. You can still whisper the player by clicking their name.",
+								{
+									$Targets: targetMembers
+										.map((c) => `${c.Name} (${c.MemberNumber})`)
+										.join(", "),
+								}
+							)
 						);
 					} else if (!msg) {
-						bceChatNotify(`No message provided`);
+						bceChatNotify(displayText(`No message provided`));
 					} else {
 						const targetMemberNumber = targetMembers[0].MemberNumber;
 						const originalTarget = ChatRoomTargetMemberNumber;
@@ -1677,8 +1881,9 @@ async function BondageClubEnhancements() {
 			},
 			{
 				Tag: "versions",
-				Description:
-					"show versions of the club, BCE, and BCX in use by players",
+				Description: displayText(
+					"show versions of the club, BCE, and BCX in use by players"
+				),
 				Action: () => {
 					/** @type {(chars: Character[]) => string} */
 					const versionOutput = (chars) =>
@@ -1755,12 +1960,17 @@ async function BondageClubEnhancements() {
 			);
 
 		/** @type {[number, number, number, number]} */
-		const discordInvitePosition = [1650, 810, 250, 90];
+		const discordInvitePosition = [1650, 810, 250, 50];
+		/** @type {[number, number, number, number]} */
+		const licensePosition = [1650, 870, 250, 50];
 		let currentPageNumber = 0;
 
 		/** @type {SettingsCategory | null} */
 		let currentCategory = null;
-		/** @type {SettingsCategory[]} */
+		/**
+		 * Excludes hidden
+		 * @type {SettingsCategory[]}
+		 */
 		const settingsCategories = [
 			"chat",
 			"activities",
@@ -1780,11 +1990,12 @@ async function BondageClubEnhancements() {
 			misc: "Misc",
 			cheats: "Cheats",
 			addons: "Other Addons",
+			hidden: "",
 		};
 
 		const currentDefaultSettings = (category) =>
 			Object.entries(defaultSettings).filter(
-				([, v]) => v.category === category
+				([, v]) => v.category === category && v.value === !!v.value
 			);
 
 		w.PreferenceSubscreenBCESettingsLoad = function () {
@@ -1796,12 +2007,26 @@ async function BondageClubEnhancements() {
 		};
 		w.PreferenceSubscreenBCESettingsRun = function () {
 			w.MainCanvas.getContext("2d").textAlign = "left";
-			DrawText("Bondage Club Enhancements Settings", 300, 125, "Black", "Gray");
+			DrawText(
+				displayText("Bondage Club Enhancements Settings"),
+				300,
+				125,
+				"Black",
+				"Gray"
+			);
 			DrawButton(...discordInvitePosition, "", "White", "");
 			DrawText(
-				"Join Discord",
+				displayText("Join Discord"),
 				discordInvitePosition[0] + 20,
 				discordInvitePosition[1] + discordInvitePosition[3] / 2,
+				"Black",
+				""
+			);
+			DrawButton(...licensePosition, "", "White", "");
+			DrawText(
+				displayText("GPL3 Licensed"),
+				licensePosition[0] + 20,
+				licensePosition[1] + licensePosition[3] / 2,
 				"Black",
 				""
 			);
@@ -1820,8 +2045,8 @@ async function BondageClubEnhancements() {
 						y,
 						64,
 						64,
-						defaultSetting.label,
-						bceSettings[settingName]
+						displayText(defaultSetting.label),
+						!!bceSettings[settingName]
 					);
 					y += settingsYIncrement;
 				}
@@ -1838,7 +2063,7 @@ async function BondageClubEnhancements() {
 				for (const category of settingsCategories) {
 					DrawButton(300, y, 400, 64, "", "White");
 					DrawTextFit(
-						settingCategoryLabels[category],
+						displayText(settingCategoryLabels[category]),
 						310,
 						y + 32,
 						380,
@@ -1847,6 +2072,7 @@ async function BondageClubEnhancements() {
 					y += settingsYIncrement;
 				}
 			}
+			w.MainCanvas.getContext("2d").textAlign = "center";
 		};
 		w.PreferenceSubscreenBCESettingsClick = function () {
 			let y = settingsYStart;
@@ -1856,6 +2082,8 @@ async function BondageClubEnhancements() {
 				} else {
 					currentCategory = null;
 				}
+			} else if (MouseIn(...licensePosition)) {
+				open(BCE_LICENSE, "_blank");
 			} else if (MouseIn(...discordInvitePosition)) {
 				open(DISCORD_INVITE_URL, "_blank");
 			} else if (currentCategory !== null) {
@@ -1912,7 +2140,7 @@ async function BondageClubEnhancements() {
 			(args, next) => {
 				switch (args[0]) {
 					case "HomepageBCESettings":
-						return "BCE Settings";
+						return displayText("BCE Settings");
 					default:
 						return next(args);
 				}
@@ -2035,9 +2263,15 @@ async function BondageClubEnhancements() {
 			SDK.hookFunction("LoginRun", HOOK_PRIORITIES.Top, (args, next) => {
 				const ret = next(args);
 				if (Object.keys(loginData.passwords).length > 0) {
-					DrawText("Saved Logins (BCE)", 170, 35, "White", "Black");
+					DrawText(
+						displayText("Saved Logins (BCE)"),
+						170,
+						35,
+						"White",
+						"Black"
+					);
 				}
-				DrawButton(1250, 385, 180, 60, "Save (BCE)", "White");
+				DrawButton(1250, 385, 180, 60, displayText("Save (BCE)"), "White");
 
 				let y = 60;
 				for (const user in loginData.passwords) {
@@ -2132,7 +2366,7 @@ async function BondageClubEnhancements() {
 					MemberName: "VOID",
 					ChatRoomName: "VOID",
 					Private: true,
-					Message: "Reconnected!",
+					Message: displayText("Reconnected!"),
 					ChatRoomSpace: "",
 				},
 			]);
@@ -2152,10 +2386,11 @@ async function BondageClubEnhancements() {
 						{
 							MemberNumber: Player.MemberNumber,
 							MemberName: Player.Name,
-							ChatRoomName: "ERROR",
+							ChatRoomName: displayText("ERROR"),
 							Private: true,
-							Message:
-								"Signed in from a different location! Refresh the page to re-enable relogin in this tab.",
+							Message: displayText(
+								"Signed in from a different location! Refresh the page to re-enable relogin in this tab."
+							),
 							ChatRoomSpace: "",
 						},
 					]);
@@ -2620,7 +2855,59 @@ async function BondageClubEnhancements() {
 	async function automaticExpressions() {
 		await waitFor(() => CurrentScreen === "ChatRoom");
 
-		bceLog("Started arousal faces");
+		patchFunction(
+			"StruggleStrength",
+			{
+				'CharacterSetFacialExpression(Player, "Blush", "Low");':
+					'CharacterSetFacialExpression(Player, "Blush", "Low", 10);',
+				'CharacterSetFacialExpression(Player, "Blush", "Medium");':
+					'CharacterSetFacialExpression(Player, "Blush", "Medium", 10);',
+				'CharacterSetFacialExpression(Player, "Blush", "High");':
+					'CharacterSetFacialExpression(Player, "Blush", "High", 10);',
+				'CharacterSetFacialExpression(Player, "Fluids", "DroolMessy");':
+					'CharacterSetFacialExpression(Player, "Fluids", "DroolMessy", 10);',
+				'CharacterSetFacialExpression(Player, "Eyebrows", (StruggleProgress >= 50) ? "Angry" : null);':
+					'CharacterSetFacialExpression(Player, "Eyebrows", (StruggleProgress >= 50) ? "Angry" : null, 10);',
+				"StruggleProgressStruggleCount ==": "StruggleProgressStruggleCount >=",
+			},
+			"Resetting blush, fluids and eyebrows after brute force struggling"
+		);
+
+		patchFunction(
+			"StruggleFlexibility",
+			{
+				'CharacterSetFacialExpression(Player, "Blush", "Low");':
+					'CharacterSetFacialExpression(Player, "Blush", "Low", 10);',
+				'CharacterSetFacialExpression(Player, "Blush", "Medium");':
+					'CharacterSetFacialExpression(Player, "Blush", "Medium", 10);',
+				'CharacterSetFacialExpression(Player, "Blush", "High");':
+					'CharacterSetFacialExpression(Player, "Blush", "High", 10);',
+				'CharacterSetFacialExpression(Player, "Eyes2", "Closed");':
+					'CharacterSetFacialExpression(Player, "Eyes2", "Closed", 10);',
+				'CharacterSetFacialExpression(Player, "Eyebrows", (StruggleProgress >= 50) ? "Angry" : null);':
+					'CharacterSetFacialExpression(Player, "Eyebrows", (StruggleProgress >= 50) ? "Angry" : null, 10);',
+				"StruggleProgressStruggleCount ==": "StruggleProgressStruggleCount >=",
+			},
+			"Resetting blush, eyes2 and eyebrows after flexibility struggling"
+		);
+
+		patchFunction(
+			"StruggleDexterity",
+			{
+				'CharacterSetFacialExpression(Player, "Blush", "Low");':
+					'CharacterSetFacialExpression(Player, "Blush", "Low", 10);',
+				'CharacterSetFacialExpression(Player, "Blush", "Medium");':
+					'CharacterSetFacialExpression(Player, "Blush", "Medium", 10);',
+				'CharacterSetFacialExpression(Player, "Blush", "High");':
+					'CharacterSetFacialExpression(Player, "Blush", "High", 10);',
+				'CharacterSetFacialExpression(Player, "Eyes", "Dazed");':
+					'CharacterSetFacialExpression(Player, "Eyes", "Dazed", 10);',
+				'CharacterSetFacialExpression(Player, "Eyebrows", (StruggleProgress >= 50) ? "Angry" : null);':
+					'CharacterSetFacialExpression(Player, "Eyebrows", (StruggleProgress >= 50) ? "Angry" : null, 10);',
+				"StruggleProgressStruggleCount ==": "StruggleProgressStruggleCount >=",
+			},
+			"Resetting blush, eyes and eyebrows after dexterity struggling"
+		);
 
 		if (!w.bce_ArousalExpressionStages) {
 			// eslint-disable-next-line camelcase
@@ -3950,8 +4237,9 @@ async function BondageClubEnhancements() {
 
 		Commands.push({
 			Tag: "r",
-			Description:
-				"[part of face or 'all']: resets expression overrides on part of or all of face",
+			Description: displayText(
+				"[part of face or 'all']: resets expression overrides on part of or all of face"
+			),
 			Action: (args) => {
 				if (args.length === 0 || args === "all") {
 					bceExpressionsQueue.push(
@@ -3959,7 +4247,7 @@ async function BondageClubEnhancements() {
 							.splice(0, bceExpressionsQueue.length)
 							.filter((e) => e.Type === MANUAL_OVERRIDE_EVENT_TYPE && e.Poses)
 					);
-					bceChatNotify("Reset all expressions");
+					bceChatNotify(displayText("Reset all expressions"));
 				} else {
 					const component = `${args[0].toUpperCase()}${args
 						.substring(1)
@@ -3972,26 +4260,32 @@ async function BondageClubEnhancements() {
 							delete e.Expression[component];
 						}
 					}
-					bceChatNotify(`Reset expression on ${component}`);
+					bceChatNotify(
+						displayText(`Reset expression on $component`, {
+							$component: component,
+						})
+					);
 				}
 			},
 		});
 
 		Commands.push({
 			Tag: "anim",
-			Description: "['list' or name of emote]: run an animation",
+			Description: displayText("['list' or name of emote]: run an animation"),
 			Action: (_1, _2, args) => {
 				if (!bceSettings.activityExpressions) {
 					bceChatNotify(
-						"Activity expressions are not enabled in BCE settings. Unable to run animations."
+						displayText(
+							"Activity expressions are not enabled in BCE settings. Unable to run animations."
+						)
 					);
 					return;
 				}
 				if (args[0] === "list") {
 					bceChatNotify(
-						`Available animations: ${Object.keys(w.bce_EventExpressions).join(
-							", "
-						)}`
+						displayText(`Available animations: $anims`, {
+							$anims: Object.keys(w.bce_EventExpressions).join(", "),
+						})
 					);
 				}
 				const animation = Object.keys(w.bce_EventExpressions).find(
@@ -4005,7 +4299,7 @@ async function BondageClubEnhancements() {
 
 		Commands.push({
 			Tag: "pose",
-			Description: "['list' or list of poses]: set your pose",
+			Description: displayText("['list' or list of poses]: set your pose"),
 			Action: (_1, _2, poses) => {
 				if (poses[0] === "list") {
 					const categories = [
@@ -4022,7 +4316,9 @@ async function BondageClubEnhancements() {
 				}
 				if (!bceSettings.expressions && !bceSettings.activityExpressions) {
 					bceChatNotify(
-						"Warning: both expression settings in BCE are disabled. Animation engine disabled. Pose may not be synchronized or set."
+						displayText(
+							"Warning: both expression settings in BCE are disabled. Animation engine disabled. Pose may not be synchronized or set."
+						)
 					);
 				}
 				bceExpressionsQueue.forEach((e) => {
@@ -4677,7 +4973,7 @@ async function BondageClubEnhancements() {
 				if (bceSettings.layeringMenu) {
 					const C = CharacterAppearanceSelection;
 					if (CharacterAppearanceMode === "Cloth") {
-						DrawText("Priority", 70, 35, "White", "Black");
+						DrawText(displayText("Priority"), 70, 35, "White", "Black");
 						ElementPosition(layerPriority, 60, 105, 100);
 						DrawButton(
 							110,
@@ -4687,7 +4983,7 @@ async function BondageClubEnhancements() {
 							"",
 							"White",
 							"Icons/Accept.png",
-							"Set Priority"
+							displayText("Set Priority")
 						);
 						const item = C.Appearance.find(
 							(a) => a.Asset.Group === C.FocusGroup
@@ -4810,7 +5106,7 @@ async function BondageClubEnhancements() {
 							"",
 							"White",
 							ICONS.TIGHTEN,
-							"Loosen or tighten"
+							displayText("Loosen or tighten")
 						);
 						if (
 							colorCopiableAssets.includes(focusItem.Asset.Name) &&
@@ -4824,7 +5120,9 @@ async function BondageClubEnhancements() {
 								"",
 								"White",
 								ICONS.PAINTBRUSH,
-								`Copy colors to other ${focusItem.Asset.Description.toLowerCase()}`
+								displayText(`Copy colors to other $Item`, {
+									$Item: focusItem.Asset.Description.toLowerCase(),
+								})
 							);
 						}
 					}
@@ -4837,7 +5135,7 @@ async function BondageClubEnhancements() {
 							"",
 							"White",
 							ICONS.LAYERS,
-							"Modify layering priority"
+							displayText("Modify layering priority")
 						);
 					}
 				}
@@ -4854,7 +5152,14 @@ async function BondageClubEnhancements() {
 				if (prioritySubscreen) {
 					if (canAccessLayeringMenus()) {
 						if (focusItem) {
-							DrawText(`Set item ${priorityField}`, 950, 150, "White", "Black");
+							// Localization guide: valid options for priorityField can be seen in the "const FIELDS" object above
+							DrawText(
+								displayText(`Set item ${priorityField}`),
+								950,
+								150,
+								"White",
+								"Black"
+							);
 							DrawButton(1815, 75, 90, 90, "", "White", "Icons/Exit.png");
 							ElementPosition(layerPriority, 950, 210, 100);
 							DrawButton(
@@ -4865,7 +5170,8 @@ async function BondageClubEnhancements() {
 								"",
 								"White",
 								"Icons/Accept.png",
-								`Set ${priorityField}`
+								// Localization guide: valid options for priorityField can be seen in the "const FIELDS" object above
+								displayText(`Set ${priorityField}`)
 							);
 							return null;
 						}
@@ -4924,9 +5230,14 @@ async function BondageClubEnhancements() {
 			if (CurrentScreen === "ChatRoom") {
 				ChatRoomCharacterUpdate(C);
 				bceSendAction(
-					`${
-						Player.Name
-					}'s ${focusItem.Asset.Description.toLowerCase()} colors spread from her ${focusItem.Asset.Group.Description.toLowerCase()}`
+					displayText(
+						"$PlayerName $ItemName colors spread from her $ItemGroup",
+						{
+							$PlayerName: Player.Name,
+							$ItemName: focusItem.Asset.Description.toLowerCase(),
+							$ItemGroup: focusItem.Asset.Group.Description.toLowerCase(),
+						}
+					)
 				);
 			} else {
 				CharacterRefresh(C);
@@ -4975,11 +5286,13 @@ async function BondageClubEnhancements() {
 							action = "tightens";
 						}
 						focusItem.Difficulty = newDifficulty;
-						if (action !== null) {
-							bceSendAction(
-								`${Player.Name} ${action} ${C.Name}'s ${focusItem.Asset.Description}.`
-							);
-						}
+						bceSendAction(
+							displayText(`$PlayerName ${action} $TargetName $ItemName`, {
+								$PlayerName: Player.Name,
+								$TargetName: C.Name,
+								$ItemName: focusItem.Asset.Description.toLowerCase(),
+							})
+						);
 					}
 					break;
 				default:
@@ -5082,9 +5395,10 @@ async function BondageClubEnhancements() {
 				message: {
 					type: MESSAGE_TYPES.Hello,
 					version: BCE_VERSION,
-					alternateArousal: bceSettings.alternateArousal,
+					alternateArousal: !!bceSettings.alternateArousal,
 					replyRequested: requestReply,
 					capabilities: CAPABILITIES,
+					nick: Player.BCEOriginalName ? Player.Name : null,
 				},
 			},
 		};
@@ -5102,6 +5416,7 @@ async function BondageClubEnhancements() {
 
 		ServerSocket.on(
 			"ChatRoomMessage",
+			// eslint-disable-next-line complexity
 			(
 				/** @type {BCEChatMessage} */
 				data
@@ -5120,6 +5435,21 @@ async function BondageClubEnhancements() {
 							sender.BCE = message.version;
 							sender.BCEArousal = message.alternateArousal || false;
 							sender.BCECapabilities = message.capabilities;
+							if (bceSettings.nicknames) {
+								const newName = removeNonPrintables(message.nick);
+								if (newName && newName.length <= 20) {
+									if (!sender.BCEOriginalName) {
+										sender.BCEOriginalName = sender.Name;
+									}
+									sender.Name = newName;
+									if (sender.BCEOriginalName === sender.Name) {
+										delete sender.BCEOriginalName;
+									}
+								} else if (sender.BCEOriginalName) {
+									sender.Name = sender.BCEOriginalName;
+									delete sender.BCEOriginalName;
+								}
+							}
 							if (message.replyRequested) {
 								sendHello(sender.MemberNumber);
 							}
@@ -5523,17 +5853,17 @@ async function BondageClubEnhancements() {
 				if (!bceSettings.showQuickAntiGarble || bceSettings.discreetMode) {
 					return ret;
 				}
-				const shorttip = "Gagging: ",
-					tooltip = "Antigarble anti-cheat strength: ";
+				const shorttip = displayText("Gagging"),
+					tooltip = displayText("Antigarble anti-cheat strength");
 
 				let color = "white",
 					label = "None";
 
-				const disableBoth = () => `${tooltip}None`,
-					enableLimited = () => `${tooltip}Limited`,
-					enableStrong = () => `${tooltip}Full`,
+				const disableBoth = () => displayText("$tip: None", { $tip: tooltip }),
+					enableLimited = () => displayText("$tip: Limited", { $tip: tooltip }),
+					enableStrong = () => displayText("$tip: Full", { $tip: tooltip }),
 					// eslint-disable-next-line sort-vars
-					enableExtra = () => `${tooltip}Extra`;
+					enableExtra = () => displayText("$tip: Extra", { $tip: tooltip });
 
 				let next = enableLimited,
 					previous = enableExtra;
@@ -5556,7 +5886,8 @@ async function BondageClubEnhancements() {
 				}
 				DrawBackNextButton(
 					...gagAntiCheatMenuPosition,
-					shorttip + label,
+					// Localization guide: ignore, covered by localizing the arrow functions above
+					displayText(`$tip: ${label}`, { $tip: shorttip }),
 					color,
 					"",
 					previous,
@@ -5571,11 +5902,11 @@ async function BondageClubEnhancements() {
 				/** @type {[string, string, string, () => string, () => string, boolean, number, Position]} */
 				const gagCheatMenuParams = bceSettings.gagspeak
 					? [
-							"Understand: Yes",
+							displayText("Understand: Yes"),
 							"green",
 							"",
-							() => "Understand gagspeak: No",
-							() => "Understand gagspeak: No",
+							() => displayText("Understand gagspeak: No"),
+							() => displayText("Understand gagspeak: No"),
 							// eslint-disable-next-line no-undefined
 							undefined,
 							// eslint-disable-next-line no-undefined
@@ -5586,8 +5917,8 @@ async function BondageClubEnhancements() {
 							"Understand: No",
 							"white",
 							"",
-							() => "Understand gagspeak: Yes",
-							() => "Understand gagspeak: Yes",
+							() => displayText("Understand gagspeak: Yes"),
+							() => displayText("Understand gagspeak: Yes"),
 							// eslint-disable-next-line no-undefined
 							undefined,
 							// eslint-disable-next-line no-undefined
@@ -5977,13 +6308,17 @@ async function BondageClubEnhancements() {
 				GLASSES_BLUR_TARGET.classList.contains(GLASSES_BLIND_CLASS)
 			) {
 				GLASSES_BLUR_TARGET.classList.remove(GLASSES_BLIND_CLASS);
-				bceChatNotify("Having recovered your glasses you can see again!");
+				bceChatNotify(
+					displayText("Having recovered your glasses you can see again!")
+				);
 			} else if (
 				!hasGlasses &&
 				!GLASSES_BLUR_TARGET.classList.contains(GLASSES_BLIND_CLASS)
 			) {
 				GLASSES_BLUR_TARGET.classList.add(GLASSES_BLIND_CLASS);
-				bceChatNotify("Having lost your glasses your eyesight is impaired!");
+				bceChatNotify(
+					displayText("Having lost your glasses your eyesight is impaired!")
+				);
 			}
 		}
 
@@ -6036,32 +6371,30 @@ async function BondageClubEnhancements() {
 						(f) => !lastFriends.some((ff) => ff.MemberNumber === f)
 					);
 				if (onlineFriends.length) {
-					bceNotify(
-						`Now online: ${onlineFriends
-							.map((f) => {
-								const { MemberNumber, MemberName } = data.Result.find(
-									(d) => d.MemberNumber === f
-								);
-								return `${MemberName} (${MemberNumber})`;
-							})
-							.join(", ")}`,
-						5000,
-						{ ClickAction: BEEP_CLICK_ACTIONS.FriendList }
-					);
+					const list = onlineFriends
+						.map((f) => {
+							const { MemberNumber, MemberName } = data.Result.find(
+								(d) => d.MemberNumber === f
+							);
+							return `${MemberName} (${MemberNumber})`;
+						})
+						.join(", ");
+					bceNotify(displayText(`Now online: $list`, { $list: list }), 5000, {
+						ClickAction: BEEP_CLICK_ACTIONS.FriendList,
+					});
 				}
 				if (bceSettings.friendOfflineNotifications && offlineFriends.length) {
-					bceNotify(
-						`Now offline: ${offlineFriends
-							.map((f) => {
-								const { MemberNumber, MemberName } = lastFriends.find(
-									(d) => d.MemberNumber === f
-								);
-								return `${MemberName} (${MemberNumber})`;
-							})
-							.join(", ")}`,
-						5000,
-						{ ClickAction: BEEP_CLICK_ACTIONS.FriendList }
-					);
+					const list = offlineFriends
+						.map((f) => {
+							const { MemberNumber, MemberName } = lastFriends.find(
+								(d) => d.MemberNumber === f
+							);
+							return `${MemberName} (${MemberNumber})`;
+						})
+						.join(", ");
+					bceNotify(displayText(`Now offline: $list`, { $list: list }), 5000, {
+						ClickAction: BEEP_CLICK_ACTIONS.FriendList,
+					});
 				}
 				lastFriends = data.Result;
 			}
@@ -6141,16 +6474,18 @@ async function BondageClubEnhancements() {
 				[
 					"160",
 					"100",
-					"([BCE] Force her to become a Club Slave.)",
-					"(She will become a Club Slave for the next hour.)",
+					displayText("([BCE] Force her to become a Club Slave.)"),
+					displayText("(She will become a Club Slave for the next hour.)"),
 					"bceSendToClubSlavery()",
 					"bceCanSendToClubSlavery()",
 				],
 				[
 					"160",
 					"",
-					"([BCE] Force her to become a Club Slave.)",
-					"(Requires both to use compatible versions of BCE and the target to not already be a club slave.)",
+					displayText("([BCE] Force her to become a Club Slave.)"),
+					displayText(
+						"(Requires both to use compatible versions of BCE and the target to not already be a club slave.)"
+					),
 					"",
 					"!bceCanSendToClubSlavery()",
 				],
@@ -6257,7 +6592,10 @@ async function BondageClubEnhancements() {
 			const managementScreen = "Management";
 
 			bceSendAction(
-				`${Player.Name} gets grabbed by two maids and escorted to management to serve as a Club Slave.`
+				displayText(
+					`$PlayerName gets grabbed by two maids and escorted to management to serve as a Club Slave.`,
+					{ $PlayerName: Player.Name }
+				)
 			);
 
 			const room = ChatRoomData.Name;
@@ -6271,8 +6609,9 @@ async function BondageClubEnhancements() {
 			CharacterSetActivePose(Player, "Kneel", false);
 			// eslint-disable-next-line require-atomic-updates
 			ManagementMistress.Stage = "320";
-			ManagementMistress.CurrentDialog =
-				"(You get grabbed by a pair of maids and brought to management.) Your owner wants you to be a Club Slave. Now strip.";
+			ManagementMistress.CurrentDialog = displayText(
+				"(You get grabbed by a pair of maids and brought to management.) Your owner wants you to be a Club Slave. Now strip."
+			);
 			CharacterSetCurrent(ManagementMistress);
 
 			await waitFor(
@@ -6308,7 +6647,10 @@ async function BondageClubEnhancements() {
 
 		const friendSearch = document.createElement("input");
 		friendSearch.id = "bce-friend-search";
-		friendSearch.setAttribute("placeholder", "Search for a friend");
+		friendSearch.setAttribute(
+			"placeholder",
+			displayText("Search for a friend")
+		);
 
 		container.appendChild(leftContainer);
 		container.appendChild(rightContainer);
@@ -6493,10 +6835,10 @@ async function BondageClubEnhancements() {
 			);
 			switch (status) {
 				case "completed":
-					friend.statusText.textContent = "Available";
+					friend.statusText.textContent = displayText("Online");
 					break;
 				default:
-					friend.statusText.textContent = "Unavailable";
+					friend.statusText.textContent = displayText("Unavailable");
 					break;
 			}
 			[...friendList.children]
@@ -6744,7 +7086,7 @@ async function BondageClubEnhancements() {
 						"",
 						unreadSinceOpened ? "Red" : "White",
 						"Icons/Small/Chat.png",
-						"Instant Messenger",
+						displayText("Instant Messenger"),
 						false
 					);
 				}
@@ -6876,8 +7218,10 @@ async function BondageClubEnhancements() {
 		await waitFor(() => !!Player?.AccountName);
 		await sleep(5000);
 		bceBeepNotify(
-			"BCE Changelog",
-			`BCE has received significant updates since you last used it:\n\n${bceChangelog}\n\nYou can use /bcechangelog to view this again.`
+			displayText("BCE Changelog"),
+			displayText(
+				`BCE has received significant updates since you last used it. See /bcechangelog in a chatroom.`
+			)
 		);
 	}
 
@@ -7054,7 +7398,7 @@ async function BondageClubEnhancements() {
 					const notificationCount = NotificationGetTotalCount(1);
 					document.title = `${
 						notificationCount > 0 ? `(${notificationCount}) ` : ""
-					}OnlineChat`;
+					}${displayText("OnlineChat")}`;
 					return;
 				}
 				// eslint-disable-next-line consistent-return
@@ -7083,6 +7427,242 @@ async function BondageClubEnhancements() {
 		document.body.appendChild(el);
 	}
 
+	function autoStruggle() {
+		const allowAllDialogExpressions = () => {
+			if (!(bceSettings.expressions || bceSettings.activityExpressions)) {
+				return;
+			}
+			if (
+				StruggleProgressAuto >= 0 ||
+				StruggleProgressChallenge <= 0 ||
+				!CharacterGetCurrent()?.IsPlayer()
+			) {
+				return;
+			}
+			DialogAllowBlush = true;
+			DialogAllowEyebrows = true;
+			DialogAllowFluids = true;
+		};
+
+		createTimer(() => {
+			if (!bceSettings.autoStruggle) {
+				return;
+			}
+
+			if (typeof StruggleProgress !== "number" || StruggleProgress < 0) {
+				return;
+			}
+
+			if (StruggleProgressCurrentMinigame === "Strength") {
+				allowAllDialogExpressions();
+				StruggleStrength(false);
+			} else if (StruggleProgressCurrentMinigame === "Flexibility") {
+				if (StruggleProgressFlexCircles?.length > 0) {
+					allowAllDialogExpressions();
+					StruggleFlexibility(false, true);
+					StruggleProgressFlexCircles.splice(0, 1);
+				}
+			}
+		}, 60);
+
+		createTimer(() => {
+			if (!bceSettings.autoStruggle) {
+				return;
+			}
+
+			if (typeof StruggleProgress !== "number" || StruggleProgress < 0) {
+				return;
+			}
+			if (StruggleProgressCurrentMinigame === "Dexterity") {
+				// Duplicated logic from StruggleDexterity
+				const distMult = Math.max(
+					-0.5,
+					Math.min(
+						1,
+						(85 -
+							Math.abs(
+								StruggleProgressDexTarget - StruggleProgressDexCurrent
+							)) /
+							75
+					)
+				);
+				if (distMult > 0.5) {
+					allowAllDialogExpressions();
+					StruggleDexterity(false);
+				}
+			}
+		}, 0);
+	}
+
+	function nicknames() {
+		if (isString(bceSettings.nickname)) {
+			setOwnNickname(bceSettings.nickname);
+		}
+
+		/** @type {[number, number, number, number]} */
+		const nickButtonPosition = [475, 100, 60, 60];
+		/** @type {[number, number, number, number]} */
+		const exitButtonPosition = [1815, 75, 90, 90];
+		let nickInputVisible = false;
+		const nickInputName = "bce-nick-input";
+
+		function showNickInput() {
+			nickInputVisible = true;
+			let name = "";
+			if (isString(bceSettings.nickname)) {
+				name = bceSettings.nickname;
+			}
+			ElementCreateInput(nickInputName, "text", name, "20");
+		}
+
+		function hideNickInput() {
+			if (!Player.BCEOriginalName) {
+				Player.BCEOriginalName = Player.Name;
+			}
+			bceSettings.nickname = ElementValue(nickInputName);
+			setOwnNickname(bceSettings.nickname);
+			bceSaveSettings();
+			ElementRemove(nickInputName);
+			nickInputVisible = false;
+			sendHello();
+		}
+
+		SDK.hookFunction(
+			"InformationSheetRun",
+			HOOK_PRIORITIES.AddBehaviour,
+			/** @type {(args: unknown[], next: (args: unknown[]) => unknown) => unknown} */
+			(args, next) => {
+				if (bceSettings.nicknames) {
+					if (
+						InformationSheetSelection?.BCEOriginalName &&
+						InformationSheetSelection.BCEOriginalName !==
+							InformationSheetSelection.Name
+					) {
+						w.MainCanvas.getContext("2d").textAlign = "left";
+						DrawText(
+							displayText("Official Name: ") +
+								InformationSheetSelection.BCEOriginalName,
+							550,
+							75,
+							"grey",
+							"black"
+						);
+						w.MainCanvas.getContext("2d").textAlign = "center";
+					}
+					if (InformationSheetSelection?.IsPlayer()) {
+						DrawButton(
+							...nickButtonPosition,
+							"",
+							"white",
+							"Icons/Small/Preference.png",
+							displayText("Change your nickname")
+						);
+					}
+				}
+				// eslint-disable-next-line consistent-return
+				return next(args);
+			}
+		);
+
+		SDK.hookFunction(
+			"InformationSheetRun",
+			HOOK_PRIORITIES.OverrideBehaviour,
+			/** @type {(args: unknown[], next: (args: unknown[]) => unknown) => unknown} */
+			(args, next) => {
+				if (bceSettings.nicknames && nickInputVisible) {
+					DrawButton(
+						...exitButtonPosition,
+						"",
+						"white",
+						"Icons/Accept.png",
+						displayText("Save this nickname")
+					);
+					DrawText(
+						displayText("Set your nickname here. Leave empty to reset."),
+						1000,
+						400,
+						"black",
+						"black"
+					);
+					ElementPosition(nickInputName, 1000, 500, 500);
+					return;
+				}
+				// eslint-disable-next-line consistent-return
+				return next(args);
+			}
+		);
+
+		SDK.hookFunction(
+			"InformationSheetClick",
+			HOOK_PRIORITIES.AddBehaviour,
+			/** @type {(args: unknown[], next: (args: unknown[]) => unknown) => unknown} */
+			(args, next) => {
+				if (
+					bceSettings.nicknames &&
+					InformationSheetSelection?.IsPlayer() &&
+					MouseIn(...nickButtonPosition)
+				) {
+					showNickInput();
+				}
+				// eslint-disable-next-line consistent-return
+				return next(args);
+			}
+		);
+
+		SDK.hookFunction(
+			"InformationSheetClick",
+			HOOK_PRIORITIES.OverrideBehaviour,
+			/** @type {(args: unknown[], next: (args: unknown[]) => unknown) => unknown} */
+			(args, next) => {
+				if (bceSettings.nicknames && nickInputVisible) {
+					if (MouseIn(...exitButtonPosition)) {
+						hideNickInput();
+					}
+					return;
+				}
+				// eslint-disable-next-line consistent-return
+				return next(args);
+			}
+		);
+
+		/** @type {(e: KeyboardEvent) => void} */
+		function keyHandler(e) {
+			if (e.key === "Escape" && nickInputVisible) {
+				hideNickInput();
+				e.stopPropagation();
+				e.preventDefault();
+			}
+		}
+
+		document.addEventListener("keydown", keyHandler, true);
+		document.addEventListener("keypress", keyHandler, true);
+	}
+
+	/** @type {(newName: string) => void} */
+	function setOwnNickname(newName) {
+		if (!Player.BCEOriginalName) {
+			Player.BCEOriginalName = Player.Name;
+		}
+		if (!newName) {
+			newName = Player.BCEOriginalName;
+		}
+		if (newName !== Player.BCEOriginalName) {
+			newName = removeNonPrintables(newName);
+		}
+		if (newName !== Player.Name) {
+			bceSendAction(
+				displayText("$OldName is now known as $NewName", {
+					$OldName: Player.Name,
+					$NewName: newName,
+				})
+			);
+		}
+		Player.Name = newName;
+		if (Player.Name === Player.BCEOriginalName) {
+			delete Player.BCEOriginalName;
+		}
+	}
+
 	(function () {
 		const sendHeartbeat = () => {
 			ServerSend("AccountBeep", {
@@ -7105,6 +7685,17 @@ async function BondageClubEnhancements() {
 		// 5 minutes
 		createTimer(sendHeartbeat, 1000 * 60 * 5);
 	})();
+
+	/** @type {(s: string) => string} */
+	function removeNonPrintables(s) {
+		if (!s) {
+			return "";
+		}
+		return s
+			.replace(/[^\p{L}\p{Z}'-]/gu, "")
+			.replace(/[\n\r\p{Z}]/gu, " ")
+			.trim();
+	}
 
 	/** @type {(cb: () => void, intval: number) => void} */
 	function createTimer(cb, intval) {

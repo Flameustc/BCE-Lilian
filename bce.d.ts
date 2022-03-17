@@ -142,13 +142,17 @@ export {};
 declare global {
   var BCE_VERSION: string;
   var bceSendAction: (text: string) => void;
-  var bceSettingValue: (key: string) => boolean | number;
+  var bceSettingValue: (key: string) => boolean | number | string;
   var bce_initializeDefaultExpression: () => void;
   var bceUpdatePasswordForReconnect: () => void;
   var bceMessageReplacements: (msg: string) => string;
   var bce_EventExpressions: { [key: string]: Expression };
   var bceClearPassword: (name: string) => void;
   var bceClearCaches: () => Promise<void>;
+  var bceDisplayText: (
+    original: string,
+    replacements?: Record<string, string>
+  ) => string;
   var bce_ArousalExpressionStages: ArousalExpressionStages;
   var bce_ActivityTriggers: ActivityTrigger[];
   var ActivityDictionary: string[][];
@@ -166,6 +170,20 @@ declare global {
   var ServerSend: (event: string, data: unknown) => void;
   var GameVersion: string;
   var GLVersion: string;
+  var StruggleProgress: number;
+  var StruggleProgressCurrentMinigame: "Strength" | "Flexibility" | "Dexterity";
+  var StruggleProgressDexTarget: number;
+  var StruggleProgressDexCurrent: number;
+  var StruggleProgressFlexCircles: unknown[];
+  var StruggleStrength: (Reverse: boolean) => void;
+  var StruggleFlexibility: (Reverse: boolean, Hover?: boolean) => void;
+  var StruggleDexterity: (Reverse: boolean) => void;
+  var StruggleProgressAuto: number;
+  var StruggleProgressChallenge: number;
+  var DialogAllowBlush: boolean;
+  var DialogAllowEyebrows: boolean;
+  var DialogAllowFluids: boolean;
+  var InformationSheetSelection: Character | null;
   var InventoryItemMiscLoversTimerPadlockDraw: () => void;
   var InventoryItemMiscLoversTimerPadlockClick: () => void;
   var InventoryItemMiscLoversTimerPadlockExit: () => void;
@@ -216,6 +234,7 @@ declare global {
   var NotificationGetTotalCount: (type: 0 | 1 | 2 | 3) => number;
   var InventoryGroupIsBlocked: (C: Character, group?: string) => boolean;
   var MainCanvas: HTMLCanvasElement;
+  var TranslationLanguage: string;
   var DrawText: (
     text: string,
     x: number,
@@ -453,7 +472,7 @@ declare global {
     MainCanvas: HTMLCanvasElement;
   }
   type Passwords = Record<string, string>;
-  type Settings = Record<string, boolean> & { version?: number };
+  type Settings = Record<string, boolean | string> & { version?: number };
   type SettingsCategory =
     | "performance"
     | "chat"
@@ -462,13 +481,24 @@ declare global {
     | "appearance"
     | "addons"
     | "misc"
-    | "cheats";
-  type DefaultSetting = {
+    | "cheats"
+    | "hidden";
+  type DefaultSettingBase = {
     label: string;
-    value: boolean;
-    sideEffects: (newValue: boolean) => void;
+    type?: "boolean" | "string";
+    sideEffects: (newValue: boolean | string) => void;
     category: SettingsCategory;
   };
+
+  type DefaultSettingBoolean = DefaultSettingBase & {
+    value: boolean;
+  };
+
+  type DefaultSettingString = DefaultSettingBase & {
+    value: string;
+  };
+
+  type DefaultSetting = DefaultSettingBoolean | DefaultSettingString;
 
   type DefaultSettings = Readonly<Record<string, DefaultSetting>>;
   type Duration = {
@@ -517,6 +547,7 @@ declare global {
     BCECapabilities: string[];
     BCEArousalProgress: number;
     BCEEnjoyment: number;
+    BCEOriginalName?: string;
     /** @deprecated */
     BCEWardrobe?: string;
     IsPlayer: () => boolean;
@@ -751,6 +782,7 @@ declare global {
     progress?: number;
     enjoyment?: number;
     activity?: BCEActivity;
+    nick?: string;
   };
   type ChatMessageDictionary = {
     Tag?: string;
