@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name Bondage Club Enhancements
 // @namespace https://www.bondageprojects.com/
-// @version 3.0.7
+// @version 3.1.2
 // @description enhancements for the bondage club
 // @author Sidious
 // @match https://bondageprojects.elementfx.com/*
@@ -38,10 +38,25 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const BCE_VERSION = "3.0.7_Lilian";
+const BCE_VERSION = "3.1.2_Lilian";
 const settingsVersion = 33;
 
 const bceChangelog = `${BCE_VERSION}
+- update bcx to 0.8.2
+
+3.1.1
+- R79 hotfix compatibility...
+
+3.1.0
+- R79 compatibility
+
+3.0.8
+- fix error in searching IM list, when you have friends whose names you do not know
+- fix IM search not repopulating list when erasing characters
+- sort IM list more often at opportune moments, such as when you click on a friend
+- IM metadata no longer shown in popup notifications
+
+3.0.7
 - sort IMs by recent activity
 - fix timestamps on IMs after reloading page
 
@@ -98,7 +113,7 @@ const BCE_BC_MOD_SDK=function(){"use strict";const o="1.0.2";function e(o){alert
 async function BondageClubEnhancements() {
 	"use strict";
 
-	const SUPPORTED_GAME_VERSIONS = ["R78", "R79Beta1", "R79Beta2", "R79Beta3"];
+	const SUPPORTED_GAME_VERSIONS = ["R79"];
 	const CAPABILITIES = ["clubslave"];
 
 	const w = window;
@@ -117,7 +132,7 @@ async function BondageClubEnhancements() {
 	const BCX_DEVEL_SOURCE =
 			"https://jomshir98.github.io/bondage-club-extended/devel/bcx.js",
 		BCX_SOURCE =
-			"https://raw.githubusercontent.com/Jomshir98/bondage-club-extended/ddf94017f40e10892b9ef4774f9eb8886eb8f401/bcx.js";
+			"https://raw.githubusercontent.com/Jomshir98/bondage-club-extended/d919ff7dadcdf66f7e324dfc5f611b6dbf566020/bcx.js";
 
 	const BCE_COLOR_ADJUSTMENTS_CLASS_NAME = "bce-colors",
 		BCE_LICENSE = "https://gitlab.com/Sidiousious/bce/-/blob/main/LICENSE",
@@ -897,9 +912,9 @@ async function BondageClubEnhancements() {
 			ChatRoomCurrentTime: "A462DD3A",
 			ChatRoomDrawBackground: "898C1B12",
 			ChatRoomDrawCharacterOverlay: "4AE4AD9E",
-			ChatRoomKeyDown: "33C77F12",
+			ChatRoomKeyDown: "B4BFDB0C",
 			ChatRoomListManipulation: "75D28A8B",
-			ChatRoomMessage: "D355B2C4",
+			ChatRoomMessage: "48A4F3CC",
 			ChatRoomResize: "9D52CF52",
 			ChatRoomRun: "07117155",
 			ChatRoomSendChat: "7F540ED0",
@@ -954,6 +969,7 @@ async function BondageClubEnhancements() {
 			MainRun: "B09F3B95",
 			MouseIn: "CA8B839E",
 			NotificationDrawFavicon: "AB88656B",
+			NotificationRaise: "E8F29646",
 			NotificationTitleUpdate: "0E92F3ED",
 			OnlineGameAllowChange: "3779F42C",
 			OnlineProfileClick: "9EF4F64F",
@@ -970,7 +986,7 @@ async function BondageClubEnhancements() {
 			ServerOpenFriendList: "25665C3F",
 			ServerSend: "90A61F57",
 			SkillGetWithRatio: "16620445",
-			SpeechGarbleByGagLevel: "A07EE53B",
+			SpeechGarbleByGagLevel: "276CFF37",
 			SpeechGetTotalGagLevel: "E8051EA2",
 			StruggleDexterity: "95812A41",
 			StruggleDrawLockpickProgress: "A9C2DBBC",
@@ -990,17 +1006,6 @@ async function BondageClubEnhancements() {
 		};
 
 		switch (gameVersion) {
-			case "R79Beta1":
-				hashes.ChatRoomKeyDown = "B4BFDB0C";
-				hashes.ChatRoomMessage = "98BF868C";
-				hashes.SpeechGarbleByGagLevel = "E5910C69";
-				break;
-			case "R79Beta2":
-			case "R79Beta3":
-				hashes.ChatRoomKeyDown = "B4BFDB0C";
-				hashes.ChatRoomMessage = "48A4F3CC";
-				hashes.SpeechGarbleByGagLevel = "54C20068";
-				break;
 			default:
 				break;
 		}
@@ -1406,7 +1411,7 @@ async function BondageClubEnhancements() {
 				// eslint-disable-next-line no-template-curly-in-string
 				'ChatRoomSendLocal(`<a onclick="ServerOpenFriendList()">(${ServerBeep.Message})</a>`);': `{
 					const beepId = FriendListBeepLog.length - 1;
-					ChatRoomSendLocal(\`<a id="bce-beep-reply-\${beepId}">\u21a9\ufe0f</a><a class="bce-beep-link" id="bce-beep-\${beepId}">(\${ServerBeep.Message}\${ChatRoomHTMLEntities(data.Message ? \`: \${(data.Message.length > 150 ? data.Message.substring(0, 150) + "..." : data.Message).split('\\uf124')[0].trim()}\` : "")})</a>\`);
+					ChatRoomSendLocal(\`<a id="bce-beep-reply-\${beepId}">\u21a9\ufe0f</a><a class="bce-beep-link" id="bce-beep-\${beepId}">(\${ServerBeep.Message}\${ChatRoomHTMLEntities(data.Message ? \`: \${bceStripBeepMetadata(data.Message.length > 150 ? data.Message.substring(0, 150) + "..." : data.Message)}\` : "")})</a>\`);
 					if (document.getElementById("bce-beep-reply-" + beepId)) {
 						document.getElementById(\`bce-beep-reply-\${beepId}\`).onclick = (e) => {
 							e.preventDefault();
@@ -6970,6 +6975,8 @@ async function BondageClubEnhancements() {
 
 	// BcUtil-compatible instant messaging with friends
 	function instantMessenger() {
+		w.bceStripBeepMetadata = (msg) => msg.split("\uf124")[0].trimEnd();
+
 		// Build the DOM
 		const container = document.createElement("div");
 		container.classList.add("bce-hidden");
@@ -7062,6 +7069,8 @@ async function BondageClubEnhancements() {
 					previousFriend.history.removeChild(divider);
 				}
 			}
+
+			sortIM();
 
 			activeChat = friendId;
 			scrollToBottom();
@@ -7312,17 +7321,19 @@ async function BondageClubEnhancements() {
 			const search = friendSearch.value.toLowerCase();
 			for (const friendId of friendMessages.keys()) {
 				const friend = friendMessages.get(friendId);
-				const friendName = Player.FriendNames.get(friendId).toLowerCase();
+				const friendName = Player.FriendNames.get(friendId)?.toLowerCase();
 				if (search === "") {
 					friend.listElement.classList.remove("bce-hidden");
-					friend.listElement.style.display = "";
 				} else if (
 					!friendId.toString().includes(search) &&
-					!friendName.includes(search)
+					!friendName?.includes(search)
 				) {
 					friend.listElement.classList.add("bce-hidden");
+				} else {
+					friend.listElement.classList.remove("bce-hidden");
 				}
 			}
+			sortIM();
 		};
 
 		ServerSocket.on(
@@ -7458,6 +7469,18 @@ async function BondageClubEnhancements() {
 					return;
 				}
 				next(args);
+			}
+		);
+
+		SDK.hookFunction(
+			"NotificationRaise",
+			HOOK_PRIORITIES.ModifyBehaviourHigh,
+			/** @type {(args: [string, Partial<{ body: string }>], next: (args: [string, Partial<{ body: string }>]) => void) => void} */
+			(args, next) => {
+				if (args[0] === "Beep" && args[1].body) {
+					args[1].body = bceStripBeepMetadata(args[1].body);
+				}
+				return next(args);
 			}
 		);
 
