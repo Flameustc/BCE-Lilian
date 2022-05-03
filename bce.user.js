@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name Bondage Club Enhancements
 // @namespace https://www.bondageprojects.com/
-// @version 3.1.2
+// @version 3.1.7
 // @description enhancements for the bondage club
 // @author Sidious
 // @match https://bondageprojects.elementfx.com/*
@@ -38,10 +38,29 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const BCE_VERSION = "3.1.2_Lilian";
-const settingsVersion = 33;
+const BCE_VERSION = "3.1.7_Lilian";
+const settingsVersion = 34;
 
 const bceChangelog = `${BCE_VERSION}
+- fix automatic relogin when connection gets reset multiple times
+- fix struggling causing rate limiting errors
+
+3.1.6
+- more fixes towards automatic relogin when connection gets rate limited
+
+3.1.5
+- dynamically position IM button (further out of the way in main chatroom view)
+
+3.1.4
+- fixes towards automatic relogin when connection gets rate limited
+- longer handgag
+- option for handgagging
+- don't reset face on login
+
+3.1.3
+- update discord link to https://discord.gg/SHJMjEh9VH
+
+3.1.2
 - update bcx to 0.8.2
 
 3.1.1
@@ -127,7 +146,7 @@ async function BondageClubEnhancements() {
 
 	w.BCE_VERSION = BCE_VERSION;
 
-	const DISCORD_INVITE_URL = "https://discord.gg/aCCWVzXBUj";
+	const DISCORD_INVITE_URL = "https://discord.gg/SHJMjEh9VH";
 
 	const BCX_DEVEL_SOURCE =
 			"https://jomshir98.github.io/bondage-club-extended/devel/bcx.js",
@@ -199,9 +218,9 @@ async function BondageClubEnhancements() {
 	let bceSettings = {};
 
 	/**
-	 * @type {DefaultSettings}
+	 * @type {Readonly<DefaultSettings>}
 	 */
-	const defaultSettings = Object.freeze({
+	const defaultSettings = {
 		expressions: {
 			label: "Automatic Arousal Expressions (Replaces Vanilla)",
 			sideEffects: (newValue) => {
@@ -510,6 +529,14 @@ async function BondageClubEnhancements() {
 			},
 			category: "immersion",
 		},
+		handgag: {
+			label: "Clamping hand over mouth affects speech",
+			value: true,
+			sideEffects: (newValue) => {
+				bceLog("handgag", newValue);
+			},
+			category: "immersion",
+		},
 		checkUpdates: {
 			label: "Check for updates",
 			sideEffects: (newValue) => {
@@ -668,7 +695,32 @@ async function BondageClubEnhancements() {
 			},
 			category: "hidden",
 		},
-	});
+	};
+
+	/** @type {SocketEventListenerRegister} */
+	const listeners = [];
+	/** @type {(event: ServerSocketEvent, cb: SocketEventListener) => void} */
+	function registerSocketListener(event, cb) {
+		if (!listeners.some((l) => l[1] === cb)) {
+			listeners.push([event, cb]);
+			// eslint-disable-next-line @typescript-eslint/no-misused-promises
+			ServerSocket.on(event, cb);
+		}
+	}
+
+	function appendSocketListenersToInit() {
+		SDK.hookFunction(
+			"ServerInit",
+			HOOK_PRIORITIES.AddBehaviour,
+			(args, next) => {
+				const ret = next(args);
+				for (const [event, cb] of listeners) {
+					ServerSocket.on(event, cb);
+				}
+				return ret;
+			}
+		);
+	}
 
 	function settingsLoaded() {
 		return Object.keys(bceSettings).length > 0;
@@ -976,6 +1028,8 @@ async function BondageClubEnhancements() {
 			OnlineProfileExit: "53E58C94",
 			OnlineProfileLoad: "04F6A136",
 			OnlineProfileRun: "8388DFE2",
+			RelogRun: "10AF5A60",
+			RelogExit: "2DFB2DAD",
 			ServerAccountBeep: "D93AD698",
 			ServerAppearanceBundle: "94A27A29",
 			ServerAppearanceLoadFromBundle: "76D1CC95",
@@ -1209,6 +1263,7 @@ async function BondageClubEnhancements() {
 	hiddenMessageHandler();
 	await bceLoadSettings();
 	postSettings();
+	appendSocketListenersToInit();
 	bceLog(bceSettings);
 	discreetMode();
 	commonPatches();
@@ -2539,32 +2594,6 @@ async function BondageClubEnhancements() {
 				posMaps: {},
 			};
 
-			SDK.hookFunction(
-				"ServerDisconnect",
-				HOOK_PRIORITIES.ModifyBehaviourHigh,
-				/** @type {(args: [unknown, boolean], next: (args: [unknown, boolean]) => void) => void} */
-				(args, next) => {
-					const [, force] = args;
-					args[1] = false;
-					const ret = next(args);
-					if (force) {
-						if (
-							isString(args[0]) &&
-							["ErrorRateLimited", "ErrorDuplicatedLogin"].includes(args[0])
-						) {
-							// Reconnect after 3-6 seconds if rate limited
-							ServerSocket.io.disconnect();
-							setTimeout(() => {
-								ServerSocket.io.connect();
-							}, 3000 + Math.round(Math.random() * 3000));
-						} else {
-							ServerSocket.disconnect();
-						}
-					}
-					return ret;
-				}
-			);
-
 			SDK.hookFunction("LoginRun", HOOK_PRIORITIES.Top, (args, next) => {
 				const ret = next(args);
 				if (Object.keys(loginData.passwords).length > 0) {
@@ -2633,15 +2662,17 @@ async function BondageClubEnhancements() {
 		let breakCircuit = false;
 
 		async function relog() {
-			if (breakCircuit || !bceSettings.relogin) {
+			if (
+				!Player?.AccountName ||
+				!ServerIsConnected ||
+				LoginSubmitted ||
+				!ServerSocket.connected ||
+				breakCircuit ||
+				!bceSettings.relogin
+			) {
 				return;
 			}
 			breakCircuit = true;
-			await waitFor(
-				() => Player.AccountName && ServerIsConnected && !LoginSubmitted
-			);
-			// eslint-disable-next-line require-atomic-updates
-			breakCircuit = false;
 			/** @type {Passwords} */
 			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
 			let passwords = JSON.parse(
@@ -2652,10 +2683,7 @@ async function BondageClubEnhancements() {
 				passwords = {};
 			}
 			if (!passwords[Player.AccountName]) {
-				// eslint-disable-next-line no-alert
-				alert("Automatic reconnect failed!");
-				// eslint-disable-next-line require-atomic-updates
-				breakCircuit = true;
+				bceWarn("No saved credentials for account", Player.AccountName);
 				return;
 			}
 			LoginSetSubmitted();
@@ -2663,7 +2691,14 @@ async function BondageClubEnhancements() {
 				AccountName: Player.AccountName,
 				Password: passwords[Player.AccountName],
 			});
-			await waitFor(() => CurrentScreen !== "Relog");
+			if (
+				!(await waitFor(
+					() => CurrentScreen !== "Relog",
+					() => !breakCircuit
+				))
+			) {
+				bceWarn("Relogin failed, circuit was restored");
+			}
 			await sleep(500);
 			SDK.callOriginal("ServerAccountBeep", [
 				{
@@ -2677,35 +2712,65 @@ async function BondageClubEnhancements() {
 			]);
 		}
 
-		SDK.hookFunction("ServerConnect", HOOK_PRIORITIES.Top, (args, next) => {
-			const ret = next(args);
-			relog();
-			return ret;
-		});
-
-		SDK.hookFunction("ServerDisconnect", HOOK_PRIORITIES.Top, (args, next) => {
-			const [data] = args;
-			if (!breakCircuit && bceSettings.relogin) {
-				if (data === "ErrorDuplicatedLogin") {
-					SDK.callOriginal("ServerAccountBeep", [
-						{
-							MemberNumber: Player.MemberNumber,
-							MemberName: Player.Name,
-							ChatRoomName: displayText("ERROR"),
-							Private: true,
-							Message: displayText(
-								"Signed in from a different location! Refresh the page to re-enable relogin in this tab."
-							),
-							ChatRoomSpace: "",
-						},
-					]);
-					breakCircuit = true;
-				} else {
-					relog();
-				}
+		SDK.hookFunction("RelogRun", HOOK_PRIORITIES.Top, (args, next) => {
+			const forbiddenReasons = ["ErrorDuplicatedLogin"];
+			if (!forbiddenReasons.includes(LoginErrorMessage)) {
+				relog();
+			} else if (!breakCircuit) {
+				SDK.callOriginal("ServerAccountBeep", [
+					{
+						MemberNumber: Player.MemberNumber,
+						MemberName: Player.Name,
+						ChatRoomName: displayText("ERROR"),
+						Private: true,
+						Message: displayText(
+							"Signed in from a different location! Refresh the page to re-enable relogin in this tab."
+						),
+						ChatRoomSpace: "",
+					},
+				]);
+				breakCircuit = true;
 			}
 			return next(args);
 		});
+
+		SDK.hookFunction("RelogExit", HOOK_PRIORITIES.Top, (args, next) => {
+			breakCircuit = false;
+			return next(args);
+		});
+
+		registerSocketListener("connect", () => {
+			breakCircuit = false;
+		});
+
+		SDK.hookFunction(
+			"ServerDisconnect",
+			HOOK_PRIORITIES.ModifyBehaviourHigh,
+			/** @type {(args: [unknown, boolean], next: (args: [unknown, boolean]) => void) => void} */
+			(args, next) => {
+				const [, force] = args;
+				args[1] = false;
+				const ret = next(args);
+				if (force) {
+					bceWarn("Forcefully disconnected", args);
+					ServerSocket.disconnect();
+					if (
+						isString(args[0]) &&
+						["ErrorRateLimited", "ErrorDuplicatedLogin"].includes(args[0])
+					) {
+						// Reconnect after 3-6 seconds if rate limited
+						bceWarn("Reconnecting...");
+						setTimeout(() => {
+							bceWarn("Connecting...");
+							ServerInit();
+						}, 3000 + Math.round(Math.random() * 3000));
+					} else {
+						bceWarn("Disconnected.");
+					}
+				}
+				return ret;
+			}
+		);
 	}
 
 	function bceStyles() {
@@ -3177,12 +3242,12 @@ async function BondageClubEnhancements() {
 		patchFunction(
 			"StruggleStrength",
 			{
-				'CharacterSetFacialExpression(Player, "Blush", "Low");':
-					'CharacterSetFacialExpression(Player, "Blush", "Low", 10);',
-				'CharacterSetFacialExpression(Player, "Blush", "Medium");':
-					'CharacterSetFacialExpression(Player, "Blush", "Medium", 10);',
-				'CharacterSetFacialExpression(Player, "Blush", "High");':
-					'CharacterSetFacialExpression(Player, "Blush", "High", 10);',
+				'if (StruggleProgressStruggleCount == 15) CharacterSetFacialExpression(Player, "Blush", "Low");':
+					'if (StruggleProgressStruggleCount >= 125) CharacterSetFacialExpression(Player, "Blush", "High", 10);',
+				'if (StruggleProgressStruggleCount == 50) CharacterSetFacialExpression(Player, "Blush", "Medium");':
+					'else if (StruggleProgressStruggleCount >= 50) CharacterSetFacialExpression(Player, "Blush", "Medium", 10);',
+				'if (StruggleProgressStruggleCount == 125) CharacterSetFacialExpression(Player, "Blush", "High");':
+					'else if (StruggleProgressStruggleCount >= 15) CharacterSetFacialExpression(Player, "Blush", "Low", 10);',
 				'CharacterSetFacialExpression(Player, "Fluids", "DroolMessy");':
 					'CharacterSetFacialExpression(Player, "Fluids", "DroolMessy", 10);',
 				'CharacterSetFacialExpression(Player, "Eyebrows", (StruggleProgress >= 50) ? "Angry" : null);':
@@ -3195,12 +3260,12 @@ async function BondageClubEnhancements() {
 		patchFunction(
 			"StruggleFlexibility",
 			{
-				'CharacterSetFacialExpression(Player, "Blush", "Low");':
-					'CharacterSetFacialExpression(Player, "Blush", "Low", 10);',
-				'CharacterSetFacialExpression(Player, "Blush", "Medium");':
-					'CharacterSetFacialExpression(Player, "Blush", "Medium", 10);',
-				'CharacterSetFacialExpression(Player, "Blush", "High");':
-					'CharacterSetFacialExpression(Player, "Blush", "High", 10);',
+				'if (StruggleProgressStruggleCount == 15) CharacterSetFacialExpression(Player, "Blush", "Low");':
+					'if (StruggleProgressStruggleCount >= 125) CharacterSetFacialExpression(Player, "Blush", "High", 10);',
+				'if (StruggleProgressStruggleCount == 50) CharacterSetFacialExpression(Player, "Blush", "Medium");':
+					'else if (StruggleProgressStruggleCount >= 50) CharacterSetFacialExpression(Player, "Blush", "Medium", 10);',
+				'if (StruggleProgressStruggleCount == 125) CharacterSetFacialExpression(Player, "Blush", "High");':
+					'else if (StruggleProgressStruggleCount >= 15) CharacterSetFacialExpression(Player, "Blush", "Low", 10);',
 				'CharacterSetFacialExpression(Player, "Eyes2", "Closed");':
 					'CharacterSetFacialExpression(Player, "Eyes2", "Closed", 10);',
 				'CharacterSetFacialExpression(Player, "Eyebrows", (StruggleProgress >= 50) ? "Angry" : null);':
@@ -3213,12 +3278,12 @@ async function BondageClubEnhancements() {
 		patchFunction(
 			"StruggleDexterity",
 			{
-				'CharacterSetFacialExpression(Player, "Blush", "Low");':
-					'CharacterSetFacialExpression(Player, "Blush", "Low", 10);',
-				'CharacterSetFacialExpression(Player, "Blush", "Medium");':
-					'CharacterSetFacialExpression(Player, "Blush", "Medium", 10);',
-				'CharacterSetFacialExpression(Player, "Blush", "High");':
-					'CharacterSetFacialExpression(Player, "Blush", "High", 10);',
+				'if (StruggleProgressStruggleCount == 15) CharacterSetFacialExpression(Player, "Blush", "Low");':
+					'if (StruggleProgressStruggleCount >= 125) CharacterSetFacialExpression(Player, "Blush", "High", 10);',
+				'if (StruggleProgressStruggleCount == 50) CharacterSetFacialExpression(Player, "Blush", "Medium");':
+					'else if (StruggleProgressStruggleCount >= 50) CharacterSetFacialExpression(Player, "Blush", "Medium", 10);',
+				'if (StruggleProgressStruggleCount == 125) CharacterSetFacialExpression(Player, "Blush", "High");':
+					'else if (StruggleProgressStruggleCount >= 15) CharacterSetFacialExpression(Player, "Blush", "Low", 10);',
 				'CharacterSetFacialExpression(Player, "Eyes", "Dazed");':
 					'CharacterSetFacialExpression(Player, "Eyes", "Dazed", 10);',
 				'CharacterSetFacialExpression(Player, "Eyebrows", (StruggleProgress >= 50) ? "Angry" : null);':
@@ -3321,6 +3386,9 @@ async function BondageClubEnhancements() {
 						exp.Id = newUniqueId();
 						if (typeof exp.Priority !== "number") {
 							exp.Priority = 1;
+						}
+						if (typeof exp.Duration !== "number") {
+							exp.Duration = event.Duration;
 						}
 					}
 				}
@@ -4442,7 +4510,7 @@ async function BondageClubEnhancements() {
 			];
 		}
 
-		ServerSocket.on(
+		registerSocketListener(
 			"ChatRoomMessage",
 			(
 				/** @type {ChatMessage} */
@@ -4543,8 +4611,35 @@ async function BondageClubEnhancements() {
 			},
 		};
 
-		// Reset
-		Player.ArousalSettings.Progress = 0;
+		const faceComponents = [
+			"Eyes",
+			"Eyes2",
+			"Eyebrows",
+			"Mouth",
+			"Fluids",
+			"Emoticon",
+			"Blush",
+		];
+
+		// When first initializing, set the current face as manual override
+		pushEvent({
+			Type: MANUAL_OVERRIDE_EVENT_TYPE,
+			Duration: -1,
+			Expression: faceComponents
+				.map((t) => {
+					const [expr] = expression(t);
+					return [t, expr];
+				})
+				.filter((v) => v[1] !== null)
+				.map((v) => [v[0], [{ Expression: v[1] }]])
+				// eslint-disable-next-line no-inline-comments
+				.reduce((a, v) => ({ ...a, [/** @type {string} */ (v[0])]: v[1] }), {}),
+		});
+
+		let lastOrgasm = 0,
+			orgasmCount = 0,
+			wasDefault = false;
+
 		let PreviousArousal = Player.ArousalSettings;
 
 		const ArousalMeterDirection = {
@@ -4752,7 +4847,7 @@ async function BondageClubEnhancements() {
 			}
 		);
 
-		ServerSocket.on(
+		registerSocketListener(
 			"ChatRoomSyncPose",
 			(
 				/** @type {{ MemberNumber: number; Character?: Character; Pose: string | string[]; }} */
@@ -4770,7 +4865,7 @@ async function BondageClubEnhancements() {
 			}
 		);
 
-		ServerSocket.on(
+		registerSocketListener(
 			"ChatRoomSyncSingle",
 			(
 				/** @type {ChatRoomSyncSingleEvent} */
@@ -4788,23 +4883,9 @@ async function BondageClubEnhancements() {
 			}
 		);
 
-		const faceComponents = [
-			"Eyes",
-			"Eyes2",
-			"Eyebrows",
-			"Mouth",
-			"Fluids",
-			"Emoticon",
-			"Blush",
-		];
-
-		let lastOrgasm = 0,
-			orgasmCount = 0,
-			wasDefault = false;
-
 		// This is called once per interval to check for expression changes
 		// eslint-disable-next-line complexity
-		const CustomArousalExpression = () => {
+		function CustomArousalExpression() {
 			if (!bceAnimationEngineEnabled() || !Player?.AppearanceLayers) {
 				return;
 			}
@@ -5221,7 +5302,7 @@ async function BondageClubEnhancements() {
 			}
 
 			PreviousArousal = { ...Player.ArousalSettings };
-		};
+		}
 
 		createTimer(CustomArousalExpression, 250);
 	}
@@ -5759,7 +5840,7 @@ async function BondageClubEnhancements() {
 	async function hiddenMessageHandler() {
 		await waitFor(() => ServerSocket && ServerIsConnected);
 
-		ServerSocket.on(
+		registerSocketListener(
 			"ChatRoomMessage",
 			// eslint-disable-next-line complexity
 			(
@@ -5822,7 +5903,7 @@ async function BondageClubEnhancements() {
 			}
 		);
 
-		ServerSocket.on(
+		registerSocketListener(
 			"ChatRoomSyncMemberJoin",
 			(
 				/** @type {ChatRoomSyncMemberJoinEvent} */
@@ -5834,7 +5915,7 @@ async function BondageClubEnhancements() {
 			}
 		);
 
-		ServerSocket.on("ChatRoomSync", () => {
+		registerSocketListener("ChatRoomSync", () => {
 			sendHello();
 		});
 	}
@@ -6354,7 +6435,7 @@ async function BondageClubEnhancements() {
 		let lastSync = 0;
 		const enjoymentMultiplier = 0.2;
 
-		ServerSocket.on(
+		registerSocketListener(
 			"ChatRoomSyncArousal",
 			(
 				/** @type {{ MemberNumber: number; Progress: number; }} */
@@ -6588,7 +6669,7 @@ async function BondageClubEnhancements() {
 
 	async function autoGhostBroadcast() {
 		await waitFor(() => !!ServerSocket && ServerIsConnected);
-		ServerSocket.on(
+		registerSocketListener(
 			"ChatRoomSyncMemberJoin",
 			(
 				/** @type {ChatRoomSyncMemberJoinEvent} */
@@ -6690,7 +6771,7 @@ async function BondageClubEnhancements() {
 
 		/** @type {Friend[]} */
 		let lastFriends = [];
-		ServerSocket.on(
+		registerSocketListener(
 			"AccountQueryResult",
 			(
 				/** @type {{ Query: string; Result: Friend[] }} */
@@ -6771,7 +6852,7 @@ async function BondageClubEnhancements() {
 	async function logCharacterUpdates() {
 		await waitFor(() => ServerSocket && ServerIsConnected);
 
-		ServerSocket.on(
+		registerSocketListener(
 			"ChatRoomSyncSingle",
 			(
 				/** @type {ChatRoomSyncSingleEvent} */
@@ -6784,7 +6865,7 @@ async function BondageClubEnhancements() {
 			}
 		);
 
-		ServerSocket.on(
+		registerSocketListener(
 			"ChatRoomSyncItem",
 			(
 				/** @type {ChatRoomSyncItemEvent} */
@@ -7336,7 +7417,7 @@ async function BondageClubEnhancements() {
 			sortIM();
 		};
 
-		ServerSocket.on(
+		registerSocketListener(
 			"AccountQueryResult",
 			(
 				/** @type {{ Query: string; Result: Friend[] }} */
@@ -7432,6 +7513,20 @@ async function BondageClubEnhancements() {
 			}
 		);
 
+		/**
+		 * Get the position of the IM button dynamically based on current screen properties
+		 * @type {() => [number, number, number, number]}
+		 */
+		function buttonPosition() {
+			if (
+				CurrentScreen === "ChatRoom" &&
+				document.getElementById("TextAreaChatLog")?.offsetParent !== null
+			) {
+				return [5, 905, 60, 60];
+			}
+			return [70, 905, 60, 60];
+		}
+
 		SDK.hookFunction(
 			"DrawProcess",
 			HOOK_PRIORITIES.AddBehaviour,
@@ -7440,10 +7535,7 @@ async function BondageClubEnhancements() {
 				next(args);
 				if (bceSettings.instantMessenger) {
 					DrawButton(
-						70,
-						905,
-						60,
-						60,
+						...buttonPosition(),
 						"",
 						unreadSinceOpened ? "Red" : "White",
 						"Icons/Small/Chat.png",
@@ -7459,7 +7551,7 @@ async function BondageClubEnhancements() {
 			HOOK_PRIORITIES.OverrideBehaviour,
 			/** @type {(args: (MouseEvent | TouchEvent)[], next: (args: (MouseEvent | TouchEvent)[]) => void) => void} */
 			(args, next) => {
-				if (bceSettings.instantMessenger && MouseIn(70, 905, 60, 60)) {
+				if (bceSettings.instantMessenger && MouseIn(...buttonPosition())) {
 					sortIM();
 					container.classList.toggle("bce-hidden");
 					ServerSend("AccountQuery", { Query: "OnlineFriends" });
@@ -8075,7 +8167,7 @@ async function BondageClubEnhancements() {
 	}
 
 	function clampGag() {
-		ServerSocket.on(
+		registerSocketListener(
 			"ChatRoomMessage",
 			(
 				/** @type {ChatMessage} */
@@ -8096,7 +8188,7 @@ async function BondageClubEnhancements() {
 							clamped: 0,
 						};
 					}
-					s.clamped = Date.now() + 15000;
+					s.clamped = Date.now() + 45000;
 					characterStates.set(targetMemberNumber, s);
 				}
 			}
@@ -8108,7 +8200,10 @@ async function BondageClubEnhancements() {
 			/** @type {(args: [Character, boolean], next: (args: [Character, boolean]) => number) => number} */
 			(args, next) => {
 				let level = next(args);
-				if (characterStates.get(args[0].MemberNumber)?.clamped > Date.now()) {
+				if (
+					bceSettings.handgag &&
+					characterStates.get(args[0].MemberNumber)?.clamped > Date.now()
+				) {
 					level += 2;
 				}
 				return level;
@@ -8388,7 +8483,7 @@ async function BondageClubEnhancements() {
 			}
 		}
 
-		ServerSocket.on(
+		registerSocketListener(
 			"ChatRoomSync",
 			(
 				/** @type {ChatRoomSyncEvent} */
@@ -8403,7 +8498,7 @@ async function BondageClubEnhancements() {
 			}
 		);
 
-		ServerSocket.on(
+		registerSocketListener(
 			"ChatRoomSyncSingle",
 			(
 				/** @type {ChatRoomSyncSingleEvent} */
@@ -8758,6 +8853,7 @@ async function BondageClubEnhancements() {
 				e.preventDefault();
 				// The connection is closed, this call gets you relogin immediately
 				ServerSocket.io.disconnect();
+				CommonSetScreen("Character", "Relog");
 				ServerSocket.io.connect();
 				return (e.returnValue = "Are you sure you want to leave the club?");
 			}

@@ -36,6 +36,7 @@ declare global {
   var ServerSend: (event: string, data: unknown) => void;
   var GameVersion: string;
   var GLVersion: string;
+  var LoginErrorMessage: string;
   var StruggleProgress: number;
   var StruggleProgressCurrentMinigame: "Strength" | "Flexibility" | "Dexterity";
   var StruggleProgressDexTarget: number;
@@ -597,45 +598,44 @@ declare global {
     Type: string;
     Matchers: ActivityTriggerMatcher[];
   };
+  type ServerSocketEvent =
+    | "connect"
+    | "disconnect"
+    | "ServerInfo"
+    | "CreationResponse"
+    | "LoginResponse"
+    | "LoginQueue"
+    | "ForceDisconnect"
+    | "ChatRoomSearchResult"
+    | "ChatRoomSearchResponse"
+    | "ChatRoomCreateResponse"
+    | "ChatRoomUpdateResponse"
+    | "ChatRoomSync"
+    | "ChatRoomSyncMemberJoin"
+    | "ChatRoomSyncMemberLeave"
+    | "ChatRoomSyncRoomProperties"
+    | "ChatRoomSyncCharacter"
+    | "ChatRoomSyncSwapPlayers"
+    | "ChatRoomSyncMovePlayer"
+    | "ChatRoomSyncReorderPlayers"
+    | "ChatRoomSyncSingle"
+    | "ChatRoomSyncExpression"
+    | "ChatRoomSyncPose"
+    | "ChatRoomSyncArousal"
+    | "ChatRoomSyncItem"
+    | "ChatRoomMessage"
+    | "ChatRoomAllowItem"
+    | "ChatRoomGameResponse"
+    | "PasswordResetResponse"
+    | "AccountQueryResult"
+    | "AccountBeep"
+    | "AccountOwnership"
+    | "AccountLovership";
   type ServerSocket = {
-    on: (
-      event:
-        | "connect"
-        | "disconnect"
-        | "ServerInfo"
-        | "CreationResponse"
-        | "LoginResponse"
-        | "LoginQueue"
-        | "ForceDisconnect"
-        | "ChatRoomSearchResult"
-        | "ChatRoomSearchResponse"
-        | "ChatRoomCreateResponse"
-        | "ChatRoomUpdateResponse"
-        | "ChatRoomSync"
-        | "ChatRoomSyncMemberJoin"
-        | "ChatRoomSyncMemberLeave"
-        | "ChatRoomSyncRoomProperties"
-        | "ChatRoomSyncCharacter"
-        | "ChatRoomSyncSwapPlayers"
-        | "ChatRoomSyncMovePlayer"
-        | "ChatRoomSyncReorderPlayers"
-        | "ChatRoomSyncSingle"
-        | "ChatRoomSyncExpression"
-        | "ChatRoomSyncPose"
-        | "ChatRoomSyncArousal"
-        | "ChatRoomSyncItem"
-        | "ChatRoomMessage"
-        | "ChatRoomAllowItem"
-        | "ChatRoomGameResponse"
-        | "PasswordResetResponse"
-        | "AccountQueryResult"
-        | "AccountBeep"
-        | "AccountOwnership"
-        | "AccountLovership",
-      data: unknown
-    ) => void;
+    on: (event: ServerSocketEvent, cb: (data: unknown) => unknown) => void;
     disconnect: () => void;
     io: { connect: () => void; disconnect: () => void };
+    connected: boolean;
   };
   type Command = {
     Tag: string;
@@ -724,4 +724,8 @@ declare global {
     seen: number;
     characterBundle: string;
   };
+
+  type SocketEventListenerRegister = [ServerSocketEvent, SocketEventListener][];
+
+  type SocketEventListener = () => Promise<void> | void;
 }
