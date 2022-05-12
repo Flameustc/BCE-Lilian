@@ -3076,8 +3076,8 @@ async function BondageClubEnhancements() {
 			"mnng",
 		];
 		
-		const startSounds_CN = ["♥", "..", "~"];
-		const endSounds_CN = ["♥", "..", "..♥", "~", "~♥", "~~", "~~♥"];
+		const startSounds_CN = ["❤", "..", "~"];
+		const endSounds_CN = ["❤", "..", "..❤", "~", "~❤", "~~", "~~❤"];
 		const eggedSounds_CN = [
 			"嗯",
 			"啊",
@@ -3145,12 +3145,16 @@ async function BondageClubEnhancements() {
 			if (maxIntensity > 0 && Math.random() < chanceToMakeSound) {
 				if (isChinese) {
 					const startSound =
-					  startSounds_CN[Math.floor(Math.random() * startSounds_CN.length)];
+						startSounds_CN[Math.floor(Math.random() * startSounds_CN.length)];
 					const sound =
-					  eggedSounds_CN[Math.floor(Math.random() * eggedSounds_CN.length)];
+						eggedSounds_CN[Math.floor(Math.random() * eggedSounds_CN.length)];
 					const endSound =
-					  endSounds_CN[Math.floor(Math.random() * endSounds_CN.length)];
-					results.push(" ", `${startSound}${sound}${endSound}`, " ");
+						endSounds_CN[Math.floor(Math.random() * endSounds_CN.length)];
+					let sounds = `${startSound}${sound}${endSound}`;
+					if (Player.ArousalSettings.Progress > 90) {
+						sounds = sounds.replace("❤", "❤️");
+					}
+					results.push(" ", sounds, " ");
 				} else {				
 					const startSound =
 						startSounds[Math.floor(Math.random() * startSounds.length)];
