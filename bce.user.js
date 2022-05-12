@@ -3168,7 +3168,7 @@ async function BondageClubEnhancements() {
 						endSounds_CN[Math.floor(Math.random() * endSounds_CN.length)];
 					let sounds = `${startSound}${sound}${endSound}`;
 					if (Player.ArousalSettings.Progress > 90) {
-						sounds = sounds.replace("❤", "❤️");
+						sounds = sounds.replace(/❤/gu, "❤️");
 					}
 					results.push(" ", sounds, " ");
 				} else {				
