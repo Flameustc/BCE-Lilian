@@ -56,6 +56,7 @@ declare global {
     data: Record<string, unknown>,
     sourceMemberNumber: number
   ) => Character;
+  var ServerPlayerIsInChatRoom: () => boolean;
   var InventoryItemMiscLoversTimerPadlockDraw: () => void;
   var InventoryItemMiscLoversTimerPadlockClick: () => void;
   var InventoryItemMiscLoversTimerPadlockExit: () => void;
@@ -75,6 +76,7 @@ declare global {
   var ServerInit: () => void;
   var DialogFocusSourceItem: Item | null;
   var DialogFocusItem: Item | null;
+  var CharacterNickname: (C: Character) => string;
   var OnlineProfileExit: (save: boolean) => void;
   var ElementCreateTextArea: (id: string) => HTMLTextAreaElement;
   var ElementCreateInput: (
@@ -430,6 +432,7 @@ declare global {
     AppearanceLayers: ItemLayer[];
     Wardrobe: ItemBundle[][];
     FocusGroup: AssetGroup;
+    HasHiddenItems: boolean;
     ActivePose: string[] | null;
     BCE: string;
     BCEArousal: boolean;
