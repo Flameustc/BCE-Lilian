@@ -3077,9 +3077,9 @@ async function BondageClubEnhancements() {
 			"CommandParse",
 			{
 				"// Regular chat can be prevented with an owner presence rule":
-					"// Regular chat can be prevented with an owner presence rule\nmsg = (SpeechGetTotalGagLevel(Player) > 0) ? msg : bceMessageReplacements(msg);",
+					"// Regular chat can be prevented with an owner presence rule\nmsg = (Player.Appearance.reduce((sum, A) => sum + (A.Property?.GagLevel || 0), 0) > 0) ? msg : bceMessageReplacements(msg);",
 				"// The whispers get sent to the server and shown on the client directly":
-					"// The whispers get sent to the server and shown on the client directly\nmsg = (SpeechGetTotalGagLevel(Player) > 0 || msg.startsWith(\"!\")) ? msg : bceMessageReplacements(msg);",
+					"// The whispers get sent to the server and shown on the client directly\nmsg = ((Player.Appearance.reduce((sum, A) => sum + (A.Property?.GagLevel || 0), 0) > 0) || msg.startsWith(\"!\")) ? msg : bceMessageReplacements(msg);",
 			},
 			"No link or OOC parsing for sent whispers."
 		);
@@ -6145,6 +6145,69 @@ async function BondageClubEnhancements() {
 			}
 		);
 
+		//gag patch for Lilian's slaves
+		SDK.hookFunction(
+			"Player.CanTalk",
+			HOOK_PRIORITIES.OverrideBehaviour,
+			(args, next) => {
+				return (getTotalGagLevel(Player) === 0);
+			}			
+		);
+
+		SDK.hookFunction(
+			"CharacterRefresh",
+			HOOK_PRIORITIES.ModifyBehaviourHigh,
+			(args, next) => {
+				const [C, push, ] = args;
+				if (C.ID === 0 && push === true) {
+					for (let A = 0; A < C.Appearance.length; A++) {
+						let Group = C.Appearance[A].Asset.Group.Name;
+						let gagLevel = w.SpeechGetGagLevel(C, [Group]);
+						if (gagLevel > 0) {
+							let property = C.Appearance[A].Property;
+							if (!property) {
+								property = {
+									Effect: []
+								};
+							}
+							property.Effect = w.CharacterGetEffects(C, [Group], true).filter(x => !x.startsWith("Gag"));
+							property.OverrideAssetEffect = true;
+							property.GagLevel = gagLevel;
+							C.Appearance[A].Property = property;
+							bceLog("Gag updated (self)");
+						}
+					}
+				}
+				next(args);
+			}
+		);
+
+		SDK.hookFunction(
+			"ValidationSanitizeProperties",
+			HOOK_PRIORITIES.AddBehaviour,
+			(args, next) => {
+				let changed = next(args);
+				const [C, item] = args;
+				const Group = item.Asset.Group.Name;
+				let gagLevel = w.SpeechGetEffectGagLevel(getItemEffects(item));
+				if (C.ID === 0 && gagLevel > 0) {
+					let property = item.Property;
+					if (!property) {
+						property = {
+							Effect: []
+						};
+					}
+					property.Effect = getItemEffects(item).filter(x => !x.startsWith("Gag"));
+					property.OverrideAssetEffect = true;
+					property.GagLevel = gagLevel;
+					item.Property = property;	
+					bceLog("Gag updated (other)");
+					changed = true;
+				}
+				return changed;
+			}
+		);
+
 		// Antigarble patch for message printing
 		patchFunction(
 			"ChatRoomMessage",
@@ -6191,7 +6254,7 @@ async function BondageClubEnhancements() {
 			// Lilian's chinese garbler
 			if (bceSettings.antiAntiGarbleExtra && message == "ChatRoomChat"
 					&& (data.Type === "Chat" || (data.Type === "Whisper" && !data.Content.startsWith("!")))) {
-				const gagLevel = SpeechGetTotalGagLevel(Player);
+				const gagLevel = getTotalGagLevel(Player);
 				if (gagLevel > 0) {
 					let inOOC = false;
 					let inGarbled = false;
@@ -6199,10 +6262,12 @@ async function BondageClubEnhancements() {
 						.map((c) => {
 							switch (c) {
 								case "(":
+								case "（":
 									inOOC = true;
 									inGarbled = false;
 									return c;
 								case ")":
+								case "）":
 									inOOC = false;
 									inGarbled = false;
 									return c;
@@ -6218,6 +6283,9 @@ async function BondageClubEnhancements() {
 										if (!/^\p{L}/u.test(c)) {
 											inGarbled = false;
 											return c;
+										} else if (/^[A-Z]*$/.test(c)) {
+											inGarbled = false;
+											return "M";
 										} else if (/^[\x00-\x7F]*$/.test(c)) {
 											inGarbled = false;
 											return "m";
@@ -8165,21 +8233,21 @@ async function BondageClubEnhancements() {
 			}
 		);
 
-		SDK.hookFunction(
-			"SpeechGetTotalGagLevel",
-			HOOK_PRIORITIES.ModifyBehaviourLow,
-			/** @type {(args: [Character, boolean], next: (args: [Character, boolean]) => number) => number} */
-			(args, next) => {
-				let level = next(args);
-				if (
-					bceSettings.handgag &&
-					characterStates.get(args[0].MemberNumber)?.clamped > Date.now()
-				) {
-					level += 2;
-				}
-				return level;
-			}
-		);
+		// SDK.hookFunction(
+		// 	"SpeechGetTotalGagLevel",
+		// 	HOOK_PRIORITIES.ModifyBehaviourLow,
+		// 	/** @type {(args: [Character, boolean], next: (args: [Character, boolean]) => number) => number} */
+		// 	(args, next) => {
+		// 		let level = next(args);
+		// 		if (
+		// 			bceSettings.handgag &&
+		// 			characterStates.get(args[0].MemberNumber)?.clamped > Date.now()
+		// 		) {
+		// 			level += 2;
+		// 		}
+		// 		return level;
+		// 	}
+		// );
 	}
 
 	function toySync() {
@@ -8928,10 +8996,51 @@ async function BondageClubEnhancements() {
 		);
 	}
 
-	/** @type {(c: unknown) => c is Character} */
+	/** @type {(c: unknown) => boolean} */
 	function isWhisperWhitelist(c) {
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
 		return isNonNullObject(c) && (c.MemberNumber === 40035 || c.MemberNumber === 63172);
+	}
+
+	/** @type {(item: Item) => string[]} */
+	function getItemEffects(item) {
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+		let itemEffects = [];
+		let overrideAsset = false;
+	
+		if (item.Property && Array.isArray(item.Property.Effect)) {
+			w.CommonArrayConcatDedupe(itemEffects, item.Property.Effect);
+			overrideAsset = !!item.Property.OverrideAssetEffect;
+		}
+		if (!overrideAsset) {
+			if (Array.isArray(item.Asset.Effect)) {
+				w.CommonArrayConcatDedupe(itemEffects, item.Asset.Effect);
+			} else if (Array.isArray(item.Asset.Group.Effect)) {
+				w.CommonArrayConcatDedupe(itemEffects, item.Asset.Group.Effect);
+			}
+		}
+		return itemEffects;
+	}
+
+	/** @type {(c: Character) => number} */
+	function getTotalGagLevel(C) {
+		let GagEffect = C.Appearance.reduce((sum, A) => sum + (A.Property?.GagLevel || 0), 0);
+		if (C.ID != 0 && !NoDeaf) {
+			if (Player.GetDeafLevel() >= 7) GagEffect = Math.max(GagEffect, 20);
+			else if (Player.GetDeafLevel() >= 6) GagEffect = Math.max(GagEffect, 16);
+			else if (Player.GetDeafLevel() >= 5) GagEffect = Math.max(GagEffect, 12);
+			else if (Player.GetDeafLevel() >= 4) GagEffect = Math.max(GagEffect, 8);
+			else if (Player.GetDeafLevel() >= 3) GagEffect = Math.max(GagEffect, 6);
+			else if (Player.GetDeafLevel() >= 2) GagEffect = Math.max(GagEffect, 4);
+			else if (Player.GetDeafLevel() >= 1) GagEffect = Math.max(GagEffect, 2);
+		}
+		if (
+			bceSettings.handgag &&
+			characterStates.get(C.MemberNumber)?.clamped > Date.now()
+		) {
+			GagEffect += 2;
+		}
+		return GagEffect;
 	}
 
 	// Confirm leaving the page to prevent accidental back button, refresh, or other navigation-related disruptions
