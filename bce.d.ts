@@ -220,6 +220,7 @@ declare global {
   var CharacterAppearanceSelection: Character;
   var DialogDrawItemMenu: (C: Character) => void;
   var InventoryGet: (C: Character, groupName: string) => Item | null;
+  var InventoryGetLock: (item: Item) => Item | null;
   var DialogDraw: () => void;
   var DialogClick: () => void;
   var CurrentCharacter: Character;

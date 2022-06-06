@@ -205,8 +205,8 @@ async function BondageClubEnhancements() {
 		},
 		alternateArousal: {
 			label:
-				"Alternate Arousal (Replaces Vanilla, requires hybrid/locked arousal meter)",
-			value: false,
+				"(*) Alternate Arousal (Lilian version, requires hybrid/locked arousal meter)",
+			value: true,
 			sideEffects: (newValue) => {
 				sendHello();
 				Player.BCEArousal = !!newValue;
@@ -219,8 +219,8 @@ async function BondageClubEnhancements() {
 			category: "activities",
 		},
 		stutters: {
-			label: "Alternative speech stutter",
-			value: false,
+			label: "(*) Alternative speech stutter (Lilian version)",
+			value: true,
 			sideEffects: (newValue) => {
 				bceLog("stutters", newValue);
 			},
@@ -270,8 +270,8 @@ async function BondageClubEnhancements() {
 			category: "performance",
 		},
 		instantMessenger: {
-			label: "Instant messenger",
-			value: false,
+			label: "(*) Instant messenger",
+			value: true,
 			sideEffects: (newValue) => {
 				bceLog("instantMessenger", newValue);
 			},
@@ -347,10 +347,13 @@ async function BondageClubEnhancements() {
 			category: "chat",
 		},
 		gagspeak: {
-			label: "Understand All Gagged and when Deafened",
+			label: "(X) Understand All Gagged and when Deafened",
 			value: false,
 			sideEffects: (newValue) => {
 				bceLog("gagspeak", newValue);
+				if (newValue) {
+					bceSettings.gagspeak = false;
+				}
 			},
 			category: "cheats",
 		},
@@ -379,10 +382,13 @@ async function BondageClubEnhancements() {
 			category: "cheats",
 		},
 		autoStruggle: {
-			label: "Make automatic progress while struggling",
+			label: "(X) Make automatic progress while struggling",
 			value: false,
 			sideEffects: (newValue) => {
 				bceLog("autoStruggle", newValue);
+				if (newValue) {
+					bceSettings.autoStruggle = false;
+				}
 			},
 			category: "cheats",
 		},
@@ -469,7 +475,7 @@ async function BondageClubEnhancements() {
 		},
 		antiAntiGarbleExtra: {
 			label:
-				"Extra gag anti-cheat: even more garbling for the most extreme gags",
+				"(*) Extra gag anti-cheat: (Lilian version)",
 			value: false,
 			sideEffects: (newValue) => {
 				if (newValue) {
@@ -477,6 +483,18 @@ async function BondageClubEnhancements() {
 					bceSettings.antiAntiGarbleStrong = false;
 				}
 				bceLog("antiAntiGarbleExtra", newValue);
+			},
+			category: "immersion",
+		},
+		antiLoosenOwnerLock: {
+			label:
+				"(*) Anti-cheat on owner locked restraints",
+			value: true,
+			sideEffects: (newValue) => {
+				bceLog("antiLoosenOwnerLock", newValue);
+				if (!newValue) {
+					bceSettings.antiLoosenOwnerLock = true;
+				}		
 			},
 			category: "immersion",
 		},
@@ -538,10 +556,13 @@ async function BondageClubEnhancements() {
 			category: "misc",
 		},
 		showQuickAntiGarble: {
-			label: "Show gag cheat and anti-cheat options in chat",
+			label: "(X) Show gag cheat and anti-cheat options in chat",
 			value: false,
 			sideEffects: (newValue) => {
 				bceLog("showQuickAntiGarble", newValue);
+				if (newValue) {
+					bceSettings.showQuickAntiGarble = false;
+				}
 			},
 			category: "misc",
 		},
@@ -824,15 +845,15 @@ async function BondageClubEnhancements() {
 				"Automatic Arousal Expressions (Replaces Vanilla)":
 					"自动欲望表情 (替换原版)",
 				"Activity Expressions": "活动表示",
-				"Alternate Arousal (Replaces Vanilla, requires hybrid/locked arousal meter)":
-					"另一种欲望 (替换原版, 需要混合或锁定欲望条)",
-				"Alternative speech stutter": "另一种言语不清",
+				"(*) Alternate Arousal (Lilian version, requires hybrid/locked arousal meter)":
+					"(*) 另一种欲望（莉莉安定制版, 需要混合或锁定欲望条）",
+				"(*) Alternative speech stutter (Lilian version)": "(*) 另一种言语不清（莉莉安定制版）",
 				"Enable layering menus": "开启服装分层选项",
 				"Extended wardrobe slots (96)": "扩展衣柜保存槽 (96个)",
 				"Replace wardrobe list with character previews":
 					"使用角色预览替换衣柜保存列表",
 				"Clear Drawing Cache Hourly": "每小时清除绘图缓存",
-				"Instant messenger": "即时通讯",
+				"(*) Instant messenger": "(*) 即时通讯",
 				"Chat Links and Embeds": "聊天链接和嵌入",
 				"Use Ctrl+Enter to OOC": "使用Ctrl+Enter进行OOC发言",
 				"Use italics for input when whispering": "悄悄话使用斜体字",
@@ -840,8 +861,8 @@ async function BondageClubEnhancements() {
 				"Show friend presence notifications": "显示好友在线通知",
 				"Show friends going offline too (requires friend presence)":
 					"显示朋友离线通知 (需要启用好友在线通知)",
-				"Understand All Gagged and when Deafened":
-					"在被堵住嘴和被堵住耳朵时可以听懂所有发言",
+				"(X) Understand All Gagged and when Deafened":
+					"(X) 在被堵住嘴和被堵住耳朵时可以听懂所有发言",
 				"Reveal Lockpicking Order Based on Skill": "根据技能显示撬锁/开锁顺序",
 				"Allow layering menus while bound": "允许在捆绑时用分层菜单",
 				"Load BCX by Jomshir98 (requires refresh - no auto-update)":
@@ -852,13 +873,15 @@ async function BondageClubEnhancements() {
 					"有限的堵嘴反作弊: 和布堵嘴相同的乱码",
 				"Full gag anti-cheat: use equipped gags to determine garbling":
 					"完整的堵嘴反作弊: 使用当前装备的堵嘴来确定乱码",
-				"Extra gag anti-cheat: even more garbling for the most extreme gags":
-					"扩展的堵嘴反作弊: 对于使用最极端的堵嘴更加混乱",
+				"(*) Extra gag anti-cheat: (Lilian version)":
+					"(*) 扩展的堵嘴反作弊:（莉莉安定制版）",
+				"(*) Anti-cheat on owner locked restraints":
+					"(*) 禁止松脱有主人锁的道具",
 				"Require glasses to see": "需要眼镜才能看清",
 				"Check for updates": "检查更新",
 				"Automatic Relogin on Disconnect": "断线后自动重连",
-				"Show gag cheat and anti-cheat options in chat":
-					"在聊天室里显示堵嘴作弊和反作弊选项",
+				"(X) Show gag cheat and anti-cheat options in chat":
+					"(X) 在聊天室里显示堵嘴作弊和反作弊选项",
 				"Automatically ghost+blocklist unnaturally new users":
 					"自动对不自然的用户无视并添加黑名单",
 				"Use accurate timer inputs": "使用准确的计时器输入",
@@ -871,7 +894,7 @@ async function BondageClubEnhancements() {
 				"Limit FPS to ~15": "限制 FPS 最高为 ~15",
 				"Limit FPS to ~30": "限制 FPS 最高为 ~30",
 				"Limit FPS to ~60": "限制 FPS 最高为 ~60",
-				"Make automatic progress while struggling": "在挣扎时自动增加进度",
+				"(X) Make automatic progress while struggling": "(X) 在挣扎时自动增加进度",
 				"Allow leashing without wearing a leashable item (requires leasher to have BCE too)":
 					"允许在不佩戴牵引绳的情况下也可以进行牵引（需要牵引者也安装有BCE）",
 				"Enable buttplug.io (requires refresh)":
@@ -1265,6 +1288,7 @@ async function BondageClubEnhancements() {
 	chatRoomOverlay();
 	privateWardrobe();
 	antiGarbling();
+	antiLoosen();
 	autoGhostBroadcast();
 	blindWithoutGlasses();
 	friendPresenceNotifications();
@@ -5590,8 +5614,10 @@ async function BondageClubEnhancements() {
 				const [C] = args;
 				if (isCharacter(C) && canAccessLayeringMenus()) {
 					const focusItem = InventoryGet(C, C.FocusGroup?.Name);
+					const lock = InventoryGetLock(focusItem);
 					if (assetWorn(C, focusItem)) {
-						if (bceSettings.modifyDifficulty) {
+						if (bceSettings.modifyDifficulty
+							&& !(bceSettings.antiLoosenOwnerLock && (focusItem.Asset.OwnerOnly || (lock && lock.Asset.OwnerOnly)))) {
 							DrawButton(
 								10,
 								890,
@@ -6577,6 +6603,33 @@ async function BondageClubEnhancements() {
 			CurrentScreenFunctions.Resize = ChatRoomResize;
 			ChatRoomResize(false);
 		}
+	}
+
+	async function antiLoosen() {
+		await waitFor(() => !!ServerSocket && ServerIsConnected);
+		// Anti-cheat on owner lock
+		SDK.hookFunction(
+			"ValidationResolveModifyDiff",
+			HOOK_PRIORITIES.AddBehaviour,
+			(args, next) => {
+				const [previousItem, newItem, params] = args;
+				const lock = InventoryGetLock(previousItem);
+				const C = params.C;
+				const fromOwner = params.fromOwner;
+				const previousFactor = previousItem.Difficulty - previousItem.Asset.Difficulty;
+				let valid = true;
+				if (bceSettings.antiLoosenOwnerLock) {
+					if (C.ID === 0 && newItem.Difficulty !== previousFactor && !fromOwner && (previousItem.Asset.OwnerOnly || (lock && lock.Asset.OwnerOnly))) {
+						bceLog(`Anti loosen triggered on ${previousItem.Asset.Group}`);
+						newItem.Difficulty = previousFactor;
+						valid = false;
+					}
+				}
+				let result = next(args);
+				result.valid = result.valid && valid;
+				return result;
+			}
+		);
 	}
 
 	async function alternateArousal() {
