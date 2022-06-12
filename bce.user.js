@@ -6185,21 +6185,23 @@ async function BondageClubEnhancements() {
 			HOOK_PRIORITIES.ModifyBehaviourHigh,
 			(args, next) => {
 				const [C, push, ] = args;
-				if (C.ID === 0 && push === true) {
+				if (C.ID === 0 && (push == null || push == true)) {
 					for (let A = 0; A < C.Appearance.length; A++) {
-						let Group = C.Appearance[A].Asset.Group.Name;
-						let gagLevel = w.SpeechGetGagLevel(C, [Group]);
-						if (gagLevel > 0) {
-							let property = C.Appearance[A].Property;
+						let item = C.Appearance[A];
+						let property = item.Property;
+						const Group = item.Asset.Group.Name;
+						let gagLevel = w.SpeechGetEffectGagLevel(getItemEffects(item));
+						const needClearGag = property && property.GagLevel && property.GagLevel > 0 && isNoGagEffect(item);
+						if (gagLevel > 0 || needClearGag) {
 							if (!property) {
 								property = {
 									Effect: []
 								};
 							}
-							property.Effect = w.CharacterGetEffects(C, [Group], true).filter(x => !x.startsWith("Gag"));
+							property.Effect = getItemEffects(item).filter(x => !x.startsWith("Gag"));
 							property.OverrideAssetEffect = true;
 							property.GagLevel = gagLevel;
-							C.Appearance[A].Property = property;
+							item.Property = property;
 							bceLog("Gag updated (self)");
 						}
 					}
@@ -6214,10 +6216,11 @@ async function BondageClubEnhancements() {
 			(args, next) => {
 				let changed = next(args);
 				const [C, item] = args;
+				let property = item.Property;
 				const Group = item.Asset.Group.Name;
 				let gagLevel = w.SpeechGetEffectGagLevel(getItemEffects(item));
-				if (C.ID === 0 && gagLevel > 0) {
-					let property = item.Property;
+				const needClearGag = property && property.GagLevel && property.GagLevel > 0 && isNoGagEffect(item);
+				if (C.ID === 0 && (gagLevel > 0 || needClearGag)) {
 					if (!property) {
 						property = {
 							Effect: []
@@ -6231,6 +6234,23 @@ async function BondageClubEnhancements() {
 					changed = true;
 				}
 				return changed;
+			}
+		);
+
+		SDK.hookFunction(
+			"InventoryItemNeckAccessoriesCollarAutoShockUnitDetectSpeech",
+			HOOK_PRIORITIES.ModifyBehaviourHigh,
+			(args, next) => {
+				const [Sensitivity, Emote, Keywords, LastMessages] = args;
+				if (Sensitivity == 3 && ChatRoomLastMessage && ChatRoomLastMessage.length != LastMessages
+					&& !ChatRoomLastMessage[ChatRoomLastMessage.length - 1].startsWith("(")
+					&& !ChatRoomLastMessage[ChatRoomLastMessage.length - 1].startsWith("（")
+					&& !ChatRoomLastMessage[ChatRoomLastMessage.length - 1].startsWith("*")
+					&& /\p{L}/u.test(ChatRoomLastMessage[ChatRoomLastMessage.length - 1])
+				) {
+					return true;
+				}
+				return next(args);
 			}
 		);
 
@@ -6282,50 +6302,66 @@ async function BondageClubEnhancements() {
 					&& (data.Type === "Chat" || (data.Type === "Whisper" && !data.Content.startsWith("!")))) {
 				const gagLevel = getTotalGagLevel(Player);
 				if (gagLevel > 0) {
+					const msg = data.Content;
+					const soundWhitelist = getSoundWhitelist();
+					const useWhitelist = soundWhitelist.length > 0;
 					let inOOC = false;
-					let inGarbled = false;
-					data.Content = `${data.Content.split("")
-						.map((c) => {
-							switch (c) {
-								case "(":
-								case "（":
-									inOOC = true;
-									inGarbled = false;
-									return c;
-								case ")":
-								case "）":
-									inOOC = false;
-									inGarbled = false;
-									return c;
-								default:
-									if (inOOC)
-									{
-										inGarbled = false;
-										return c;
-									} else if (Math.random() * 30 > gagLevel + 6) {
-										inGarbled = false;
-										return c;
-									} else {
-										if (!/^\p{L}/u.test(c)) {
-											inGarbled = false;
-											return c;
-										} else if (/^[A-Z]*$/.test(c)) {
-											inGarbled = false;
-											return "M";
-										} else if (/^[\x00-\x7F]*$/.test(c)) {
-											inGarbled = false;
-											return "m";
-										} else if (inGarbled && Math.random() < 0.7) {
-											inGarbled = true;
-											return "—";
-										} else {
-											inGarbled = true;
-											return "呜";
-										}
-									}
+					let allowHyphen = false;
+					let str = [];
+					let i = 0;
+					while (i < msg.length) {
+						switch (msg[i]) {
+							case "(":
+							case "（":
+								inOOC = true;
+								allowHyphen = false;
+								str.push(msg[i++]);
+								continue;
+							case ")":
+							case "）":
+								inOOC = false;
+								allowHyphen = false;
+								str.push(msg[i++]);
+								continue;
+						}
+						if (inOOC || !/^\p{L}/u.test(msg[i])) {
+							allowHyphen = false;
+							str.push(msg[i++]);
+							continue;
+						}
+
+						// If in whitelist mode, garble everything else except allowed sounds in whitelist
+						if (useWhitelist) {
+							const bestMatch = Math.max(i, ...soundWhitelist.map(x => matchSound(msg, i, x)));
+							bceLog(`Try to garble ${msg[i]} at ${i}, bestMatch is ${bestMatch}`);
+							if (bestMatch > i) {
+								allowHyphen = false;
+								str.push(msg.slice(i, bestMatch));
+								i = bestMatch;
+								continue;
 							}
-						})
-						.join("")}${GAGBYPASSINDICATOR}`;
+							const res = garbleMessage(msg[i], allowHyphen);
+							str.push(res[0]);
+							allowHyphen = res[1];
+							i++;
+							continue;
+						} 
+						
+						// In normal mode, do random garbling
+						if (Math.random() * 30 > gagLevel + 6) {
+							allowHyphen = false;
+							str.push(msg[i++]);
+							continue;
+						} else {
+							const res = garbleMessage(msg[i], allowHyphen);
+							str.push(res[0]);
+							allowHyphen = res[1];
+							i++;
+							continue;
+						}
+					}
+					str.push(GAGBYPASSINDICATOR);
+					data.Content = str.join("");
 				}
 				return next([message, data, ...args.slice(2)]);
 			}
@@ -9094,6 +9130,82 @@ async function BondageClubEnhancements() {
 			GagEffect += 2;
 		}
 		return GagEffect;
+	}
+
+	function getSoundWhitelist() {
+		let soundWhitelist = [];
+		const bcxStorage = JSON.parse(LZString.decompressFromBase64(Player.OnlineSettings.BCX));
+		const bcxRules = bcxStorage.conditions.rules;
+		if (bcxRules.conditions.speech_specific_sound && bcxRules.conditions.speech_specific_sound.active) {
+			for (let sound of bcxRules.conditions.speech_specific_sound.data.customData.soundWhitelist) {
+				sound = sound.toLocaleLowerCase();
+				if (!soundWhitelist.includes(sound)) {
+					soundWhitelist.push(sound);
+				}
+			}
+		}
+		return soundWhitelist;
+	}
+
+	function garbleMessage(c, allowHyphen) {
+		if (/^[A-Z]*$/.test(c)) {
+			return ["M", false];
+		} else if (/^[\x00-\x7F]*$/.test(c)) {
+			return ["m", false];
+		} else if (allowHyphen && Math.random() < 0.7) {
+			return ["—", true];
+		} else {
+			return ["呜", true];
+		}
+	}
+
+	function matchSound(msg, pos, sound) {
+		let i = pos;
+		let j = 0;
+		let flag = false;	// if sound[j] has been matched for at least once
+		while (i < msg.length && j < sound.length) {
+			if (!/\p{L}/u.test(msg[i])) {
+				++i;
+				continue;
+			}
+			if (msg[i].toLocaleLowerCase() === sound[j]) {
+				flag = true;
+				++i;
+				continue;
+			}
+			if (flag) {
+				flag = false;
+				++j;
+				continue;
+			}
+			break;
+		}
+		if (j === sound.length || (flag && j === sound.length - 1)) {
+			return i;
+		} else {
+			return pos;
+		}
+	}
+
+	/** @type {(item: Item) => boolean} */
+	function isNoGagEffect(item) {
+		const name = item.Asset.Name;
+		const type = item.Property?.Type;
+		if (name === "HarnessPonyBits" && type === "Detached") return true;
+		if (name === "PonyGag" && type.includes("g1")) return true;
+		if (name === "FuturisticPanelGag" && !type) return true;
+		if (name === "FuturisticHarnessPanelGag" && !type) return true;
+		if (name === "FuturisticHarnessPanelGag" && !type) return true;
+		if (name === "PumpGag" && !type) return true;
+		if (name === "DroneMask" && (type.includes("m0") || type.includes("m3") || type.includes("m4") || type.includes("m5"))) return true;
+		if (name === "InflatedBallHood" && !type) return true;
+		if (name === "OldGasMask" && type.includes("a0")) return true;
+		if (name === "CryoCapsule" && !type) return true;
+		if (name === "Locker" && !type) return true;
+		if (name === "SmallLocker" && !type) return true;
+		if (name === "Coffin" && !type) return true;
+		if (name === "FuturisticCrate" && (type.includes("w0") || type.includes("w1") || type.includes("w2") || type.includes("w3"))) return true;		
+		return false;
 	}
 
 	// Confirm leaving the page to prevent accidental back button, refresh, or other navigation-related disruptions
