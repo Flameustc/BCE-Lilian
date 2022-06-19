@@ -33,6 +33,64 @@ declare global {
   var Player: Character;
   var WardrobeSize: number;
   var WardrobeOffset: number;
+  var CraftingSlot: number;
+  var CraftingOffset: number;
+  var CraftingMode: "Slot" | "Item" | "Property" | "Lock" | "Name";
+  var CraftingItem: Asset;
+  var CraftingProperty: string;
+  var CraftingLock: Item;
+  var CraftingModeSet: (
+    mode: "Slot" | "Item" | "Property" | "Lock" | "Name"
+  ) => void;
+  var CraftingItemListBuild: () => void;
+  var CharacterLoadSimple: (accName: string) => Character;
+  var CharacterDelete: (accName: string) => void;
+  var ItemColorLoad: (
+    c: Character,
+    item: Item,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    includeResetButton?: boolean
+  ) => void;
+  var ItemColorDraw: (
+    c: Character,
+    group: string,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    includeResetButton?: boolean
+  ) => void;
+  var ItemColorOnExit: (cb: (c: Character) => void) => void;
+  var ItemColorClick: (
+    c: Character,
+    group: string,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    includeResetButton?: boolean
+  ) => void;
+  var DrawCharacter: (
+    C: Character,
+    x: number,
+    y: number,
+    zoom: number,
+    heightResizeAllowed?: boolean,
+    canvas?: CanvasRenderingContext2D
+  ) => void;
+  var InventoryWear: (
+    C: Character,
+    AssetName: string,
+    AssetGroup: string,
+    ItemColor?: string | string[],
+    Difficulty?: number,
+    MemberNumber?: number,
+    Craft?: Craft
+  ) => void;
+  var CharacterReleaseTotal: (C: Character) => void;
   var ServerAccountUpdate: AccountUpdater;
   var ChatRoomCurrentTime: () => string;
   var LZString: LZStringType;
@@ -423,6 +481,14 @@ declare global {
   type Activity = {
     Prerequisite: string[];
   };
+  type Craft = {
+    Color: string;
+    Description: string;
+    Item: string;
+    Lock: string;
+    Name: string;
+    Property: string;
+  };
   type NPC = {
     Stage: string;
     CurrentDialog: string;
@@ -444,6 +510,7 @@ declare global {
     FocusGroup: AssetGroup;
     HasHiddenItems: boolean;
     ActivePose: string[] | null;
+    Crafting: Craft[];
     BCE: string;
     BCEArousal: boolean;
     BCECapabilities: string[];
@@ -528,6 +595,8 @@ declare global {
     BodyCosplay: boolean;
     Clothing: boolean;
     Asset: Asset[];
+    IsRestraint: boolean;
+    Zone?: [number, number, number, number][];
   };
   type Asset = {
     Name: string;
@@ -536,6 +605,7 @@ declare global {
     Color: string;
     MaxTimer?: number;
     AllowEffect?: string[];
+    AllowLock?: boolean;
   };
   type ItemLayer = Item & { Priority?: number };
   type Item = {
