@@ -38,11 +38,7 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-<<<<<<< HEAD
-const BCE_VERSION = "3.5.0_Lilian";
-=======
-const BCE_VERSION = "3.6.0";
->>>>>>> main
+const BCE_VERSION = "3.6.0_Lilian";
 const settingsVersion = 38;
 
 const bceChangelog = `${BCE_VERSION}
