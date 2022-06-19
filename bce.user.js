@@ -6261,13 +6261,31 @@ async function BondageClubEnhancements() {
 			HOOK_PRIORITIES.ModifyBehaviourHigh,
 			(args, next) => {
 				const [Sensitivity, Emote, Keywords, LastMessages] = args;
-				if (Sensitivity == 3 && ChatRoomLastMessage && ChatRoomLastMessage.length != LastMessages
-					&& !ChatRoomLastMessage[ChatRoomLastMessage.length - 1].startsWith("(")
-					&& !ChatRoomLastMessage[ChatRoomLastMessage.length - 1].startsWith("（")
-					&& !ChatRoomLastMessage[ChatRoomLastMessage.length - 1].startsWith("*")
-					&& /\p{L}/u.test(ChatRoomLastMessage[ChatRoomLastMessage.length - 1])
-				) {
-					return true;
+				if (!ChatRoomLastMessage || ChatRoomLastMessage.length == LastMessages
+						|| ChatRoomLastMessage[ChatRoomLastMessage.length - 1].startsWith("(")
+						|| ChatRoomLastMessage[ChatRoomLastMessage.length - 1].startsWith("（")
+						|| ChatRoomLastMessage[ChatRoomLastMessage.length - 1].startsWith("*")) {
+					return next(args);
+				}
+				const msg = ChatRoomLastMessage[ChatRoomLastMessage.length - 1];
+				if (Sensitivity == 3 && /\p{L}/u.test(msg)) {	
+					return true;					
+				}
+				if (Sensitivity >= 2) {
+					const rule = getDollTalk();
+					const words = Array.from(msg.matchAll(/[^\t\p{Z}\v.:!?~,;^]+/gmu)).map(i => i[0]);
+					if (rule.maxNumberOfWords > 0 && words.length > rule.maxNumberOfWords) {
+						return true;
+					}
+					if (rule.maxWordLength > 0 && words.some(word => word.length > rule.maxWordLength)) {
+						return true;
+					}
+				}
+				if (Sensitivity >= 1) {
+					const bannedWords = getBannedWords();
+					if (bannedWords.some(x => msg.toLocaleLowerCase().match(new RegExp(escapeRegExp(x.trim()), "iu")))) {
+						return true;
+					}				
 				}
 				return next(args);
 			}
@@ -9153,6 +9171,31 @@ async function BondageClubEnhancements() {
 		return soundWhitelist;
 	}
 
+	function getBannedWords() {
+		let bannedWords = [];
+		const bcxStorage = JSON.parse(LZString.decompressFromBase64(Player.OnlineSettings.BCX));
+		const bcxRules = bcxStorage.conditions.rules;
+		if (bcxRules.conditions.speech_ban_words && bcxRules.conditions.speech_ban_words.active) {
+			for (let word of bcxRules.conditions.speech_ban_words.data.customData.bannedWords) {
+				word = word.toLocaleLowerCase();
+				if (!bannedWords.includes(word)) {
+					bannedWords.push(word);
+				}
+			}
+		}
+		return bannedWords;
+	}
+
+	function getDollTalk() {
+		const bcxStorage = JSON.parse(LZString.decompressFromBase64(Player.OnlineSettings.BCX));
+		const bcxRules = bcxStorage.conditions.rules;
+		if (bcxRules.conditions.speech_doll_talk && bcxRules.conditions.speech_doll_talk.active) {
+			return bcxRules.conditions.speech_doll_talk.data.customData;
+		} else {
+			return { maxWordLength: 0, maxNumberOfWords: 0 };
+		}
+	}
+
 	function garbleMessage(c, allowHyphen) {
 		if (/^[A-Z]*$/.test(c)) {
 			return ["M", false];
@@ -9212,6 +9255,10 @@ async function BondageClubEnhancements() {
 		if (name === "Coffin" && !type) return true;
 		if (name === "FuturisticCrate" && (type.includes("w0") || type.includes("w1") || type.includes("w2") || type.includes("w3"))) return true;		
 		return false;
+	}
+
+	function escapeRegExp(str) {
+		return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 	}
 
 	// Confirm leaving the page to prevent accidental back button, refresh, or other navigation-related disruptions
