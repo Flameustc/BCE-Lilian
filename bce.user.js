@@ -38,7 +38,7 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const BCE_VERSION = "3.6.1_dev";
+const BCE_VERSION = "3.6.1_Lilian";
 const settingsVersion = 38;
 
 const bceChangelog = `${BCE_VERSION}
@@ -6225,6 +6225,12 @@ async function BondageClubEnhancements() {
 						let gagLevel = w.SpeechGetEffectGagLevel(getItemEffects(item));
 						const needClearGag = property && property.GagLevel && property.GagLevel > 0 && isNoGagEffect(item);
 						if (gagLevel > 0 || needClearGag) {
+							if ((item.Craft != null) && (item.Craft.Property != null) && (item.Craft.Property == "Large")) {
+								gagLevel += 2;
+							}
+							if ((item.Craft != null) && (item.Craft.Property != null) && (item.Craft.Property == "Small")) {
+								gagLevel -= 2;
+							}
 							if (!property) {
 								property = {
 									Effect: []
@@ -6253,6 +6259,12 @@ async function BondageClubEnhancements() {
 				let gagLevel = w.SpeechGetEffectGagLevel(getItemEffects(item));
 				const needClearGag = property && property.GagLevel && property.GagLevel > 0 && isNoGagEffect(item);
 				if (C.ID === 0 && (gagLevel > 0 || needClearGag)) {
+					if ((item.Craft != null) && (item.Craft.Property != null) && (item.Craft.Property == "Large")) {
+						gagLevel += 2;
+					}
+					if ((item.Craft != null) && (item.Craft.Property != null) && (item.Craft.Property == "Small")) {
+						gagLevel -= 2;
+					}
 					if (!property) {
 						property = {
 							Effect: []
@@ -6348,8 +6360,7 @@ async function BondageClubEnhancements() {
 			}
 
 			// Lilian's chinese garbler
-			if (bceSettings.antiAntiGarbleExtra && message == "ChatRoomChat"
-					&& (data.Type === "Chat" || (data.Type === "Whisper" && !data.Content.startsWith("!")))) {
+			if (bceSettings.antiAntiGarbleExtra && message == "ChatRoomChat" && data.Type === "Chat") {
 				const gagLevel = getTotalGagLevel(Player);
 				if (gagLevel > 0) {
 					const msg = data.Content;
