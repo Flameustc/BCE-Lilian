@@ -35,7 +35,7 @@
 	"use strict";
 
 	const script = document.createElement("script");
-	script.src = `https://flameshare.azureedge.net/shared/bce.user.dev.js?v=${(
+	script.src = `https://flameshare.azureedge.net/shared/bce-dev.user.js?v=${(
 		Date.now() / 10000
 	).toFixed(0)}`;
 	document.head.appendChild(script);

@@ -36,16 +36,17 @@
 	"use strict";
 	function fromConsole() {
 		let stack = "";
-		try {
-			/*
-			 * Throwing the error for Safari's sake, in Chrome and Firefox
-			 * var stack = new Error().stack; is sufficient.
-			 */
-			throw new Error();
-		} catch (e) {
-			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-			({ stack } = e);
-		}
+		// try {
+		// 	/*
+		// 	 * Throwing the error for Safari's sake, in Chrome and Firefox
+		// 	 * var stack = new Error().stack; is sufficient.
+		// 	 */
+		// 	throw new Error();
+		// } catch (e) {
+		// 	// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+		// 	({ stack } = e);
+		// }
+		stack = new Error().stack;
 		if (!stack) {
 			return false;
 		}

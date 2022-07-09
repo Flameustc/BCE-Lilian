@@ -38,7 +38,7 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const BCE_VERSION = "3.6.1_Lilian";
+const BCE_VERSION = "3.6.1-Lilian-20220709093900";
 const settingsVersion = 38;
 
 const bceChangelog = `${BCE_VERSION}
@@ -94,9 +94,10 @@ async function BondageClubEnhancements() {
 	const DISCORD_INVITE_URL = "https://discord.gg/SHJMjEh9VH";
 
 	const BCX_DEVEL_SOURCE =
-			"https://jomshir98.github.io/bondage-club-extended/devel/bcx.js",
+		"https://jomshir98.github.io/bondage-club-extended/devel/bcx.js",
 		BCX_SOURCE =
 			"https://raw.githubusercontent.com/Jomshir98/bondage-club-extended/651683fe766c520d443b3a50c5b72130baa382c8/bcx.js",
+		BCX_LILIAN_SOURCE = "https://flameshare.azureedge.net/shared/bcx.js",
 		EBCH_SOURCE = "https://e2466.gitlab.io/ebch/master/EBCH.js";
 
 	const BCE_COLOR_ADJUSTMENTS_CLASS_NAME = "bce-colors",
@@ -395,6 +396,7 @@ async function BondageClubEnhancements() {
 			sideEffects: (newValue) => {
 				if (newValue) {
 					bceSettings.bcxDevel = false;
+					bceSettings.bcxLilian = false;
 					w.BCX_SOURCE = BCX_SOURCE;
 					loadExternalAddon("BCX", BCX_SOURCE).then((success) => {
 						if (success) {
@@ -412,6 +414,7 @@ async function BondageClubEnhancements() {
 			sideEffects: (newValue) => {
 				if (newValue) {
 					bceSettings.bcx = false;
+					bceSettings.bcxLilian = false;
 					w.BCX_SOURCE = BCX_DEVEL_SOURCE;
 					loadExternalAddon("BCX", BCX_DEVEL_SOURCE).then((success) => {
 						if (success) {
@@ -420,6 +423,24 @@ async function BondageClubEnhancements() {
 					});
 				}
 				bceLog("bcxDevel", newValue);
+			},
+			category: "addons",
+		},
+		bcxLilian: {
+			label: "(*) Load BCX (Lilian version)",
+			value: false,
+			sideEffects: (newValue) => {
+				if (newValue) {
+					bceSettings.bcx = false;
+					bceSettings.bcxDevel = false;
+					w.BCX_SOURCE = BCX_LILIAN_SOURCE;
+					loadExternalAddon("BCX", BCX_LILIAN_SOURCE).then((success) => {
+						if (success) {
+							addonTypes.BCX = "external";
+						}
+					});
+				}
+				bceLog("bcxLilian", newValue);
 			},
 			category: "addons",
 		},
@@ -866,6 +887,8 @@ async function BondageClubEnhancements() {
 					"加载 BCX by Jomshir98 (需要刷新 - 无自动更新)",
 				"Load BCX beta (requires refresh - auto-updates, compatibility not guaranteed)":
 					"加载 BCX beta 测试版 (需要刷新 - 自动升级, 不保证兼容性)",
+				"(*) Load BCX (Lilian version)":
+					"(*) 加载 BCX（莉莉安定制版）",
 				"Limited gag anti-cheat: cloth-gag equivalent garbling":
 					"有限的堵嘴反作弊: 和布堵嘴相同的乱码",
 				"Full gag anti-cheat: use equipped gags to determine garbling":
@@ -1785,7 +1808,7 @@ async function BondageClubEnhancements() {
 		}
 
 		bceInfo("Loading", addon, "from", source);
-		await fetch(source)
+		await fetch(`${source}?_=${(Date.now() / 10000).toFixed(0)}`)
 			.then((resp) => resp.text())
 			.then((resp) => {
 				resp = resp.replace(
@@ -3278,7 +3301,7 @@ async function BondageClubEnhancements() {
 					}					
 				}
 				// Handle OOC
-				const oocIdx = words[i].search(/[()]/u);
+				const oocIdx = words[i].search(/[()（）]/u);
 				if (oocIdx > 0) {
 					// Insert remainder into list of words
 					words.splice(i + 1, 0, words[i].substring(oocIdx + 1));
@@ -3293,7 +3316,7 @@ async function BondageClubEnhancements() {
 					[words[i]] = words[i];
 				}
 
-				if (words[i] === "(") {
+				if (words[i] === "(" || words[i] === "（") {
 					inOOC = true;
 				}
 
@@ -3317,7 +3340,7 @@ async function BondageClubEnhancements() {
 					newWords.push(words[i]);
 				}
 
-				if (words[i] === ")") {
+				if (words[i] === ")" || words[i] === "）") {
 					inOOC = false;
 				}
 			}
@@ -5927,14 +5950,25 @@ async function BondageClubEnhancements() {
 						50 * Zoom,
 						50 * Zoom
 					);
-					DrawTextFit(
-						/^\d+\.\d+(\.\d+)?$/u.test(C.BCE) ? C.BCE : "",
-						CharX + 300 * Zoom,
-						CharY + 40 * Zoom,
-						50 * Zoom,
-						DEVS.includes(C.MemberNumber) ? "#b33cfa" : "White",
-						"Black"
-					);
+					if (C.BCE.includes("Lilian")) {
+						DrawTextFit(
+							"Lilian",
+							CharX + 300 * Zoom,
+							CharY + 40 * Zoom,
+							50 * Zoom,
+							DEVS.includes(C.MemberNumber) ? "#b33cfa" : "White",
+							"Black"
+						);
+					} else {
+						DrawTextFit(
+							/^\d+\.\d+(\.\d+)?$/u.test(C.BCE) ? C.BCE : "",
+							CharX + 300 * Zoom,
+							CharY + 40 * Zoom,
+							50 * Zoom,
+							DEVS.includes(C.MemberNumber) ? "#b33cfa" : "White",
+							"Black"
+						);
+					}
 					if (
 						C.BCE &&
 						characterStates.get(C.MemberNumber)?.clamped > Date.now()
@@ -6203,7 +6237,7 @@ async function BondageClubEnhancements() {
 			}
 		);
 
-		//gag patch for Lilian's slaves
+		// gag patch for Lilian's slaves
 		SDK.hookFunction(
 			"Player.CanTalk",
 			HOOK_PRIORITIES.OverrideBehaviour,
@@ -6212,6 +6246,7 @@ async function BondageClubEnhancements() {
 			}			
 		);
 
+		// known issue: craft property "Large" can't be bypassed
 		SDK.hookFunction(
 			"CharacterRefresh",
 			HOOK_PRIORITIES.ModifyBehaviourHigh,
@@ -6225,12 +6260,6 @@ async function BondageClubEnhancements() {
 						let gagLevel = w.SpeechGetEffectGagLevel(getItemEffects(item));
 						const needClearGag = property && property.GagLevel && property.GagLevel > 0 && isNoGagEffect(item);
 						if (gagLevel > 0 || needClearGag) {
-							if ((item.Craft != null) && (item.Craft.Property != null) && (item.Craft.Property == "Large")) {
-								gagLevel += 2;
-							}
-							if ((item.Craft != null) && (item.Craft.Property != null) && (item.Craft.Property == "Small")) {
-								gagLevel -= 2;
-							}
 							if (!property) {
 								property = {
 									Effect: []
@@ -6259,12 +6288,6 @@ async function BondageClubEnhancements() {
 				let gagLevel = w.SpeechGetEffectGagLevel(getItemEffects(item));
 				const needClearGag = property && property.GagLevel && property.GagLevel > 0 && isNoGagEffect(item);
 				if (C.ID === 0 && (gagLevel > 0 || needClearGag)) {
-					if ((item.Craft != null) && (item.Craft.Property != null) && (item.Craft.Property == "Large")) {
-						gagLevel += 2;
-					}
-					if ((item.Craft != null) && (item.Craft.Property != null) && (item.Craft.Property == "Small")) {
-						gagLevel -= 2;
-					}
 					if (!property) {
 						property = {
 							Effect: []
@@ -6385,7 +6408,7 @@ async function BondageClubEnhancements() {
 								str.push(msg[i++]);
 								continue;
 						}
-						if (inOOC || !/^\p{L}/u.test(msg[i])) {
+						if (inOOC || !/^(\p{L}|\p{N})/u.test(msg[i])) {
 							allowHyphen = false;
 							str.push(msg[i++]);
 							continue;
@@ -7720,15 +7743,19 @@ async function BondageClubEnhancements() {
 					return;
 				}
 				if (data.Result && bceSettings.instantMessenger) {
+					const rule = getForbidIM();
 					for (const friend of data.Result) {
 						const f = handleUnseenFriend(friend.MemberNumber);
-						f.online = true;
-						f.statusText.textContent = displayText("Online");
-						f.listElement.classList.remove(offlineClass);
-						f.listElement.classList.add(onlineClass);
+						if (!rule.forbid || rule.allowedMembers.includes(friend.MemberNumber)) {
+						    f.online = true;
+							f.statusText.textContent = displayText("Online");
+							f.listElement.classList.remove(offlineClass);
+							f.listElement.classList.add(onlineClass);
+						}
 					}
 					for (const friendId of Array.from(friendMessages.keys()).filter(
-						(f) => !data.Result.some((f2) => f2.MemberNumber === f)
+						(f) => !data.Result.some((f2) => f2.MemberNumber === f) ||
+								(rule.forbid && !rule.allowedMembers.includes(f))
 					)) {
 						const f = friendMessages.get(friendId);
 						f.online = false;
@@ -7736,7 +7763,8 @@ async function BondageClubEnhancements() {
 						f.listElement.classList.remove(onlineClass);
 						f.listElement.classList.add(offlineClass);
 					}
-					if (!data.Result.some((f) => f.MemberNumber === activeChat)) {
+					if (!data.Result.some((f) => f.MemberNumber === activeChat) ||
+						(rule.forbid && !rule.allowedMembers.includes(activeChat))) {
 						// Disable input, current user is offline
 						messageInput.disabled = true;
 					} else {
@@ -9444,6 +9472,8 @@ async function BondageClubEnhancements() {
 	/** @type {(c: Character) => number} */
 	function getTotalGagLevel(C) {
 		let GagEffect = C.Appearance.reduce((sum, A) => sum + (A.Property?.GagLevel || 0), 0);
+		GagEffect = GagEffect + w.InventoryCraftCount(C, "Large") * 2;
+		GagEffect = GagEffect - w.InventoryCraftCount(C, "Small") * 2;
 		if (C.ID != 0 && !NoDeaf) {
 			if (Player.GetDeafLevel() >= 7) GagEffect = Math.max(GagEffect, 20);
 			else if (Player.GetDeafLevel() >= 6) GagEffect = Math.max(GagEffect, 16);
@@ -9502,8 +9532,23 @@ async function BondageClubEnhancements() {
 		}
 	}
 
+	function getForbidIM() {
+		const bcxStorage = JSON.parse(LZString.decompressFromBase64(Player.OnlineSettings.BCX));
+		const bcxRules = bcxStorage.conditions.rules;
+		if (bcxRules.conditions.speech_restrict_instant_messenger && bcxRules.conditions.speech_restrict_instant_messenger.active) {
+			return {
+				forbid: true,
+				allowedMembers: bcxRules.conditions.speech_restrict_instant_messenger.data.customData.allowedMembers
+			};
+		} else {
+			return { forbid: false, allowedMembers: []};
+		}
+	}
+
 	function garbleMessage(c, allowHyphen) {
-		if (/^[A-Z]*$/.test(c)) {
+		if (/^\p{N}/u.test(c)) {
+			return ["*", false];
+		} else if (/^\p{Lu}/u.test(c)) {
 			return ["M", false];
 		} else if (/^[\x00-\x7F]*$/.test(c)) {
 			return ["m", false];
