@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name Bondage Club Enhancements
 // @namespace https://www.bondageprojects.com/
-// @version 3.6.1
+// @version 3.7.0
 // @description enhancements for the bondage club
 // @author Sidious
 // @match https://bondageprojects.elementfx.com/*
@@ -19,6 +19,7 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 /* eslint-disable no-undef */
 /* eslint-disable no-implicit-globals */
+/* eslint-disable no-alert */
 
 /**
  *     BCE
@@ -38,16 +39,20 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const BCE_VERSION = "3.6.1-Lilian-20220709093900";
+const BCE_VERSION = "3.7.0-Lilian-20220709093900";
 const settingsVersion = 38;
 
 const bceChangelog = `${BCE_VERSION}
-- add addon items to craftable items
-- add nudity toggle to crafting preview
+- /exportlooks prompts for options and is more configurable
+- /importlooks now prompts for the input string instead of patching chat input
+- crafted items now work with /exportlooks and /importlooks
+- fixed changing buttplug.io slots with more than one device connected
 
-3.6.0
+3.6
 - R81 compatibility
 - add /craft command
+- add addon items to craftable items
+- add nudity toggle to crafting preview
 - improvements to the crafting interface
 - removed all activities cheat until it can be implemented better
 
@@ -57,10 +62,6 @@ const bceChangelog = `${BCE_VERSION}
 - fix notes in profile
 - validate version strings before displaying them
 - new setting to allow using all activities always regardless of their prerequisites
-
-3.4
-- add loading for Eli's BC Helper by the wonderful Elicia
-- move loosen or tighten button to its own cheat setting
 `;
 
 /*
@@ -77,7 +78,7 @@ const bcModSdk=function(){"use strict";const o="1.0.2";function e(o){alert("Mod 
 async function BondageClubEnhancements() {
 	"use strict";
 
-	const SUPPORTED_GAME_VERSIONS = ["R81"];
+	const SUPPORTED_GAME_VERSIONS = ["R81", "R82Beta1"];
 	const CAPABILITIES = ["clubslave"];
 
 	const w = window;
@@ -94,7 +95,7 @@ async function BondageClubEnhancements() {
 	const DISCORD_INVITE_URL = "https://discord.gg/SHJMjEh9VH";
 
 	const BCX_DEVEL_SOURCE =
-		"https://jomshir98.github.io/bondage-club-extended/devel/bcx.js",
+			"https://jomshir98.github.io/bondage-club-extended/devel/bcx.js",
 		BCX_SOURCE =
 			"https://raw.githubusercontent.com/Jomshir98/bondage-club-extended/651683fe766c520d443b3a50c5b72130baa382c8/bcx.js",
 		BCX_LILIAN_SOURCE = "https://flameshare.azureedge.net/shared/bcx.js",
@@ -1104,6 +1105,11 @@ async function BondageClubEnhancements() {
 		};
 
 		switch (gameVersion) {
+			case "R82Beta1":
+				hashes.CraftingClick = "3D4C8373";
+				hashes.CraftingItemListBuild = "AD8AB2D2";
+				hashes.CraftingRun = "7E104EC8";
+				break;
 			default:
 				break;
 		}
@@ -1896,10 +1902,10 @@ async function BondageClubEnhancements() {
 			{
 				Tag: "exportlooks",
 				Description: displayText(
-					"[target member number] [includeBinds: true/false] [total: true/false]: Copy your or another player's appearance in a format that can be imported with BCX"
+					"[target member number]: Copy your or another player's appearance in a format that can be imported with BCE or BCX"
 				),
 				Action: async (_, _command, args) => {
-					const [target, includeBindsArg, total] = args;
+					const [target] = args;
 					/** @type {Character} */
 					let targetMember = null;
 					if (!target) {
@@ -1913,35 +1919,44 @@ async function BondageClubEnhancements() {
 						bceInfo("Could not find member", target);
 						return;
 					}
-					const includeBinds = includeBindsArg === "true";
-					// LockMemberNumber
+					const includeBinds = window.confirm(displayText("Include binds?"));
+					const includeLocks =
+						includeBinds && window.confirm(displayText("Include locks?"));
+					const includeBase = window.confirm(
+						displayText("Include height, body type, hair, etc?")
+					);
 
+					const base = targetMember.Appearance.filter(
+						(a) => a.Asset.Group.IsDefault && !a.Asset.Group.Clothing
+					);
 					const clothes = targetMember.Appearance.filter(
 						(a) =>
-							a.Asset.Group.Category === "Appearance" &&
-							a.Asset.Group.AllowNone &&
-							a.Asset.Group.Clothing
+							a.Asset.Group.Category === "Appearance" && a.Asset.Group.Clothing
+					);
+					const binds = targetMember.Appearance.filter(
+						(a) =>
+							a.Asset.Group.Category === "Item" &&
+							!["ItemNeck", "ItemNeckAccessories"].includes(
+								a.Asset.Group.Name
+							) &&
+							!a.Asset.Group.BodyCosplay
 					);
 
 					const appearance = [...clothes];
 					if (includeBinds) {
-						appearance.push(
-							...targetMember.Appearance.filter(
-								(a) =>
-									a.Asset.Group.Category === "Item" &&
-									!["ItemNeck", "ItemNeckAccessories"].includes(
-										a.Asset.Group.Name
-									) &&
-									!a.Asset.Group.BodyCosplay
-							)
-						);
+						appearance.push(...binds);
+					}
+					if (includeBase) {
+						appearance.push(...base);
 					}
 
 					/** @type {ItemBundle[]} */
-					const looks = (
-						total === "true" ? targetMember.Appearance : appearance
-					).map((i) => {
+					const looks = appearance.map((i) => {
 						const property = i.Property ? { ...i.Property } : {};
+						if (!includeLocks && property.LockedBy) {
+							delete property.LockedBy;
+							delete property.LockMemberNumber;
+						}
 						if (property?.LockMemberNumber) {
 							property.LockMemberNumber = Player.MemberNumber;
 						}
@@ -1951,6 +1966,7 @@ async function BondageClubEnhancements() {
 							Color: i.Color,
 							Difficulty: i.Difficulty,
 							Property: property,
+							Craft: i.Craft,
 						};
 					});
 
@@ -1958,7 +1974,9 @@ async function BondageClubEnhancements() {
 						? "yourself"
 						: targetMember.Name;
 
-					await navigator.clipboard.writeText(JSON.stringify(looks));
+					await navigator.clipboard.writeText(
+						LZString.compressToBase64(JSON.stringify(looks))
+					);
 					bceChatNotify(
 						displayText(`Exported looks for $TargetName copied to clipboard`, {
 							$TargetName: targetName,
@@ -1969,9 +1987,9 @@ async function BondageClubEnhancements() {
 			{
 				Tag: "importlooks",
 				Description: displayText(
-					"[looks string]: Import looks from a string (BCX or BCE export)"
+					"Import looks from a string (BCX or BCE export)"
 				),
-				Action: (_, command) => {
+				Action: () => {
 					if (!Player.CanChange() || !OnlineGameAllowChange()) {
 						bceChatNotify(
 							displayText(
@@ -1981,7 +1999,9 @@ async function BondageClubEnhancements() {
 						return;
 					}
 
-					const [, bundleString] = command.split(" ");
+					const bundleString = window.prompt(
+						displayText("Paste your looks here")
+					);
 					if (!bundleString) {
 						bceChatNotify(displayText("No looks string provided"));
 						return;
@@ -2180,17 +2200,6 @@ async function BondageClubEnhancements() {
 			"Whispers sent via /w will trigger items such as the automated shock collar and futuristic training belt."
 		);
 
-		// Patch to allow /importlooks to exceed 1000 characters
-		w.InputChat?.removeAttribute("maxlength");
-		patchFunction(
-			"ChatRoomCreateElement",
-			{
-				'document.getElementById("InputChat").setAttribute("maxLength", 1000);':
-					"",
-			},
-			"You may be unable to /importlooks due to the chat input being limited in length."
-		);
-
 		for (const c of cmds) {
 			if (Commands.some((a) => a.Tag === c.Tag)) {
 				bceLog("already registered", c);
@@ -2347,7 +2356,7 @@ async function BondageClubEnhancements() {
 							w.MainCanvas.getContext("2d").textAlign = "center";
 							DrawButton(
 								...scanButtonPosition,
-								"Scan",
+								displayText("Scan"),
 								toySyncState.client.isScanning ? "Grey" : "White",
 								"",
 								toySyncState.client.isScanning ? "Already scanning" : null,
@@ -2480,6 +2489,7 @@ async function BondageClubEnhancements() {
 						dev.AllowedMessages.includes(0)
 					)) {
 						if (!MouseIn(800, y - 32, 450, 64)) {
+							y += settingsYIncrement;
 							continue;
 						}
 						const deviceSettings = toySyncState.deviceSettings.get(d.Name);
@@ -6566,15 +6576,6 @@ async function BondageClubEnhancements() {
 					} else if (w.InputChat.classList.contains(DARK_INPUT_CLASS)) {
 						w.InputChat.classList.remove(DARK_INPUT_CLASS);
 					}
-					if (
-						w.InputChat.value.length > 1000 &&
-						(!w.InputChat.value.startsWith("/") ||
-							w.InputChat.value.startsWith("/w "))
-					) {
-						w.InputChat.classList.add(INPUT_WARN_CLASS);
-					} else {
-						w.InputChat.classList.remove(INPUT_WARN_CLASS);
-					}
 				}
 
 				if (!bceSettings.showQuickAntiGarble || bceSettings.discreetMode) {
@@ -8583,7 +8584,8 @@ async function BondageClubEnhancements() {
 					}
 
 					if (client.isScanning) {
-						bceChatNotify(displayText("Already scanning"));
+						client.stopScanning();
+						bceChatNotify(displayText("Scanning stopped"));
 						return;
 					}
 
@@ -9061,6 +9063,7 @@ async function BondageClubEnhancements() {
 			"CraftingLoad",
 			HOOK_PRIORITIES.AddBehaviour,
 			(args, next) => {
+				const ret = next(args);
 				previewChar = CharacterLoadSimple(
 					`CraftingPreview-${Player.MemberNumber}`
 				);
@@ -9068,7 +9071,7 @@ async function BondageClubEnhancements() {
 				// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
 				previewChar.Crafting = JSON.parse(JSON.stringify(Player.Crafting));
 				CharacterReleaseTotal(previewChar);
-				return next(args);
+				return ret;
 			}
 		);
 		SDK.hookFunction(
