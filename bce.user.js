@@ -39,7 +39,7 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const BCE_VERSION = "3.8.5-Lilian-20220718223800";
+const BCE_VERSION = "3.8.5-Lilian-20220719092600";
 const settingsVersion = 39;
 
 const bceChangelog = `${BCE_VERSION}
@@ -3434,7 +3434,9 @@ async function BondageClubEnhancements() {
 			for (let i = 0; i < words.length; i++) {
 				// Handle other whitespace
 				const whitespaceIdx = words[i].search(/[\s\r\n]/u);
-				if (whitespaceIdx >= 1 && (!isChinese || whitespaceIdx < maxWordLength)) {
+				if (whitespaceIdx >= 1 && 
+						(/\p{L}{2}$/u.test(words[i].substring(0, whitespaceIdx)) || /^[\s\r\n]*\p{L}{2}/u.test(words[i].substring(whitespaceIdx))) &&
+						(!isChinese || whitespaceIdx < maxWordLength)) {
 					// Insert remainder into list of words
 					words.splice(i + 1, 0, words[i].substring(whitespaceIdx));
 					// Truncate current word to whitespace
@@ -6462,7 +6464,7 @@ async function BondageClubEnhancements() {
 					property.Effect = getItemEffects(item).filter(x => !x.startsWith("Gag"));
 					property.OverrideAssetEffect = true;
 					property.GagLevel = gagLevel;
-					item.Property = property;	
+					item.Property = property;
 					bceLog("Gag updated (other)");
 					changed = true;
 				}
@@ -6482,8 +6484,11 @@ async function BondageClubEnhancements() {
 					return next(args);
 				}
 				const msg = ChatRoomLastMessage[ChatRoomLastMessage.length - 1];
-				if (Sensitivity == 3 && /\p{L}/u.test(msg)) {	
-					return true;					
+				if (Sensitivity == 3) {
+					// duplicate condition since R82
+					if (/\p{L}/u.test(msg)) {
+						return true;
+					}
 				}
 				if (Sensitivity >= 2) {
 					const rule = getDollTalk();
@@ -6499,7 +6504,7 @@ async function BondageClubEnhancements() {
 					const bannedWords = getBannedWords();
 					if (bannedWords.some(x => msg.toLocaleLowerCase().match(new RegExp(escapeRegExp(x.trim()), "iu")))) {
 						return true;
-					}				
+					}
 				}
 				return next(args);
 			}
