@@ -372,6 +372,7 @@ declare global {
   var OnlineGameAllowChange: () => boolean;
   var ChatRoomKeyDown: (event: KeyboardEvent) => void;
   var FriendListBeepLog: Beep[];
+  var FriendListMode: string[];
   var FriendListModeIndex: number;
   var FriendListShowBeep: (id: number) => void;
   var DialogCanUnlock: (C: Character, item: Item) => boolean;

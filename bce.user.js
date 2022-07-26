@@ -39,7 +39,7 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const BCE_VERSION = "3.8.5-Lilian-20220726021200";
+const BCE_VERSION = "3.8.5-Lilian-20220726085600";
 const settingsVersion = 39;
 
 const bceChangelog = `${BCE_VERSION}
@@ -1597,6 +1597,26 @@ async function BondageClubEnhancements() {
 					return;
 				}
 				// eslint-disable-next-line consistent-return
+				return next(args);
+			}
+		);
+
+		SDK.hookFunction(
+			"FriendListLoadFriendList",
+			HOOK_PRIORITIES.AddBehaviour,
+			/** @type {(args: any[], next: (args: { MemberName: string; MemberNumber: number; ChatRoomName: string | null; ChatRoomSpace: string | null; Private?: boolean; Type: "Submissive" | "Friend" }[]) => void) => void} */
+			(args, next) => {
+				/** @type {{ MemberName: string; MemberNumber: number; ChatRoomName: string | null; ChatRoomSpace: string | null; Private?: boolean; Type: "Submissive" | "Friend" }[]} */
+				const data = args[0];
+				const mode = FriendListMode[FriendListModeIndex];
+				if (mode === "Friends") {
+					const idx = data.findIndex((x) => x.MemberNumber == Player.Ownership?.MemberNumber);
+					if (idx >= 0) {
+						const item = data[idx];
+						data.copyWithin(1, 0, idx);
+						data[0] = item;
+					}
+				}
 				return next(args);
 			}
 		);
