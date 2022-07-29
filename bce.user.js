@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name Bondage Club Enhancements
 // @namespace https://www.bondageprojects.com/
-// @version 3.8.5
+// @version 3.9.0
 // @description enhancements for the bondage club
 // @author Sidious
 // @match https://bondageprojects.elementfx.com/*
@@ -39,30 +39,19 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const BCE_VERSION = "3.8.5-Lilian-20220726085600";
+const BCE_VERSION = "3.9.0-Lilian-20220729201800";
 const settingsVersion = 39;
 
 const bceChangelog = `${BCE_VERSION}
-- R82 compatibility
+- add ability to load wardrobe sets without overriding body parts such as hair styles, eye colors, body sizes
 
-3.8.4
-- small styling fixes for BCE's tooltips
-
-3.8.3
-- fix crash with crafted item property/description showing
-
-3.8.2
-- show crafted property and description when hovering over item
-- R82 beta 3 compatibility
-
-3.8.1
-- import/export for crafts
-
-3.8.0
+3.8
 - removed "keep tab active" option, which did not work. In Firefox you can set widget.windows.window_occlusion_tracking.enabled to false in about:config to keep the game processing in the background
-- added descriptions for settings, which show up when clicking each setting
+- add descriptions for settings, which show up when clicking each setting
 - allow sharing your crafted items with other BCE users in the room, per item
 - option to disable seeing shared crafts
+- import/export for crafts
+- show crafted property and description when hovering over item
 
 3.7
 - /exportlooks prompts for options and is more configurable
@@ -77,13 +66,6 @@ const bceChangelog = `${BCE_VERSION}
 - add nudity toggle to crafting preview
 - improvements to the crafting interface
 - removed all activities cheat until it can be implemented better
-
-3.5
-- R81Beta3 compatibility
-- remove cheat to loosen/tighten *while bound*: it has become apparent this is causing more problems than the issues it was created to solve
-- fix notes in profile
-- validate version strings before displaying them
-- new setting to allow using all activities always regardless of their prerequisites
 `;
 
 /*
@@ -120,7 +102,7 @@ async function BondageClubEnhancements() {
 	const BCX_DEVEL_SOURCE =
 			"https://jomshir98.github.io/bondage-club-extended/devel/bcx.js",
 		BCX_SOURCE =
-			"https://raw.githubusercontent.com/Jomshir98/bondage-club-extended/651683fe766c520d443b3a50c5b72130baa382c8/bcx.js",
+			"https://raw.githubusercontent.com/Jomshir98/bondage-club-extended/c9847a5b641b3a0e58e6b13c4987b9bf1a21b8af/bcx.js",
 		BCX_LILIAN_SOURCE = "https://flameshare.azureedge.net/shared/bcx.js",
 		EBCH_SOURCE = "https://e2466.gitlab.io/ebch/master/EBCH.js";
 
@@ -1104,6 +1086,7 @@ async function BondageClubEnhancements() {
 			CharacterDecompressWardrobe: "A9FD29CC",
 			CharacterDelete: "398D1116",
 			CharacterGetCurrent: "A4EA6438",
+			CharacterLoadCanvas: "678F3155",
 			CharacterLoadSimple: "7F6FA9F2",
 			CharacterNickname: "EB452E5E",
 			CharacterRefresh: "5BF9DA5A",
@@ -1218,6 +1201,7 @@ async function BondageClubEnhancements() {
 			TimerInventoryRemove: "83E7C8E9",
 			TimerProcess: "19F09E1E",
 			TitleExit: "9DB9BA4A",
+			WardrobeClick: "E96F7F63",
 			WardrobeExit: "EE83FF29",
 			WardrobeFastLoad: "545CB8FD",
 			WardrobeFastSave: "B62385C1",
@@ -6296,6 +6280,8 @@ async function BondageClubEnhancements() {
 		/** @type {string} */
 		let appearanceBackup = null;
 
+		let excludeBodyparts = false;
+
 		SDK.hookFunction(
 			"CharacterAppearanceWardrobeLoad",
 			HOOK_PRIORITIES.OverrideBehaviour,
@@ -6320,6 +6306,39 @@ async function BondageClubEnhancements() {
 					CharacterAppearanceBackup = appearanceBackup;
 				}
 				return ret;
+			}
+		);
+
+		SDK.hookFunction(
+			"AppearanceRun",
+			HOOK_PRIORITIES.AddBehaviour,
+			(args, next) => {
+				if (CharacterAppearanceMode === "Wardrobe") {
+					DrawCheckbox(1300, 350, 64, 64, "", excludeBodyparts, false, "white");
+					drawTextFitLeft(
+						displayText("Load without body parts"),
+						1374,
+						380,
+						630,
+						"white"
+					);
+				}
+				return next(args);
+			}
+		);
+
+		SDK.hookFunction(
+			"AppearanceClick",
+			HOOK_PRIORITIES.ModifyBehaviourMedium,
+			(args, next) => {
+				if (
+					CharacterAppearanceMode === "Wardrobe" &&
+					MouseIn(1300, 350, 64, 64)
+				) {
+					excludeBodyparts = !excludeBodyparts;
+					return null;
+				}
+				return next(args);
 			}
 		);
 
@@ -6351,7 +6370,27 @@ async function BondageClubEnhancements() {
 					35,
 					"White"
 				);
+				DrawCheckbox(10, 74, 64, 64, "", excludeBodyparts, false, "white");
+				drawTextFitLeft(
+					displayText("Exclude body parts"),
+					84,
+					106,
+					300,
+					"white"
+				);
 				return ret;
+			}
+		);
+
+		SDK.hookFunction(
+			"WardrobeClick",
+			HOOK_PRIORITIES.ModifyBehaviourMedium,
+			(args, next) => {
+				if (MouseIn(10, 74, 64, 64)) {
+					excludeBodyparts = !excludeBodyparts;
+					return null;
+				}
+				return next(args);
 			}
 		);
 
@@ -6371,13 +6410,28 @@ async function BondageClubEnhancements() {
 		SDK.hookFunction(
 			"WardrobeFastLoad",
 			HOOK_PRIORITIES.OverrideBehaviour,
+			/** @type {(args: [Character, number, boolean], next: (args: [Character, number, boolean]) => unknown) => unknown} */
 			(args, next) => {
-				const [C] = args;
+				let [C] = args;
+				const base = C.Appearance.filter(
+					(a) => a.Asset.Group.IsDefault && !a.Asset.Group.Clothing
+				);
 				if (inCustomWardrobe && isCharacter(C) && C.IsPlayer()) {
 					args[0] = targetCharacter;
+					C = targetCharacter;
 					args[2] = false;
 				}
-				return next(args);
+				const ret = next(args);
+				if (excludeBodyparts) {
+					C.Appearance = [
+						...base,
+						...C.Appearance.filter(
+							(a) => !a.Asset.Group.IsDefault || a.Asset.Group.Clothing
+						),
+					];
+					CharacterLoadCanvas(C);
+				}
+				return ret;
 			}
 		);
 
@@ -9720,6 +9774,14 @@ async function BondageClubEnhancements() {
 			"black"
 		);
 		canvas.textAlign = bak;
+	}
+
+	/** @type {(text: string, x: number, y: number, width: number, color: string, backColor?: string) => void} */
+	function drawTextFitLeft(text, x, y, width, color, backColor = null) {
+		const bk = w.MainCanvas.getContext("2d").textAlign;
+		w.MainCanvas.getContext("2d").textAlign = "left";
+		DrawTextFit(text, x, y, width, color, backColor);
+		w.MainCanvas.getContext("2d").textAlign = bk;
 	}
 
 	/** @type {(s: string) => string} */
