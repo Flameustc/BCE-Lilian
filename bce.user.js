@@ -39,7 +39,7 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const BCE_VERSION = "3.9.0-Lilian-20220729201800";
+const BCE_VERSION = "3.9.0-Lilian-20220730110600";
 const settingsVersion = 39;
 
 const bceChangelog = `${BCE_VERSION}
@@ -7239,17 +7239,6 @@ async function BondageClubEnhancements() {
 			Character[C].BCEEnjoyment = 1;`,
 			},
 			"Alternative arousal algorithm will be incorrect."
-		);
-
-		patchFunction(
-			"ActivityOrgasmPrepare",
-			{
-				"if (C.IsEdged()) {": `
-				if (C.IsEdged() && C.BCEArousal) {
-					if (C.ID == 0 && Bypass) ActivityOrgasmRuined = true;
-				} else if (C.IsEdged()) {`,
-			},
-			"Allow player to orgasm via activities other than vibrators when edged."
 		);
 	}
 
