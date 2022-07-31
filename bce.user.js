@@ -39,7 +39,7 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const BCE_VERSION = "3.9.0-Lilian-20220730230900";
+const BCE_VERSION = "3.9.0-Lilian-20220731185400";
 const settingsVersion = 39;
 
 const bceChangelog = `${BCE_VERSION}
@@ -6486,6 +6486,14 @@ async function BondageClubEnhancements() {
 			(args, next) => {
 				return (getTotalGagLevel(Player) === 0);
 			}			
+		);
+
+		patchFunction(
+			"ChatRoomStimulationMessage",
+			{
+				'const gagged = InventoryItemHasEffect(A, "GagTotal", true) || InventoryItemHasEffect(A, "GagTotal2", true);': 'const gagged = (A.Property?.GagLevel || 0) >= 8;'
+			},
+			"Talk stimulation events can't be triggered."
 		);
 
 		// known issue: craft property "Large" can't be bypassed
