@@ -39,7 +39,7 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const BCE_VERSION = "3.9.0-Lilian-20220730110600";
+const BCE_VERSION = "3.9.0-Lilian-20220730230900";
 const settingsVersion = 39;
 
 const bceChangelog = `${BCE_VERSION}
@@ -7021,21 +7021,6 @@ async function BondageClubEnhancements() {
 			}
 		);
 
-		SDK.hookFunction(
-			"ActivitySetArousalTimer",
-			HOOK_PRIORITIES.ModifyBehaviourMedium,
-			(args, next) => {
-				const [C, Activity, Zone, Progress] = args;
-				const arousalModifier = getArousalModifier(C, Activity, Zone);
-				if (Activity && Activity.MaxProgress) {
-					const newActivity = Object.assign({}, Activity);
-					newActivity.MaxProgress = Math.min(Activity.MaxProgress + arousalModifier.hornyLevel * 10, 100);
-					args[1] = newActivity;
-				}
-				return next(args);
-			}
-		);
-
 		patchFunction(
 			"ActivitySetArousalTimer",
 			{
@@ -9957,17 +9942,6 @@ async function BondageClubEnhancements() {
 		} else {
 			return { forbid: false, allowedMembers: []};
 		}
-	}
-
-	function getArousalModifier(C, Activity, Zone) {
-		const bcxStorage = JSON.parse(LZString.decompressFromBase64(Player.OnlineSettings.BCX));
-		const bcxRules = bcxStorage.conditions.rules;
-		if (C.ID === 0 && bcxRules.conditions.alt_horny_level && bcxRules.conditions.alt_horny_level.active)	{
-			return {
-				hornyLevel: bcxRules.conditions.alt_horny_level.data.customData.baseHornyLevel
-			}
-		}
-		return { hornyLevel: 0 };
 	}
 
 	function garbleMessage(c, allowHyphen) {
