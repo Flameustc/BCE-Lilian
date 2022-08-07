@@ -39,7 +39,7 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const BCE_VERSION = "3.9.2-Lilian-20220807014700";
+const BCE_VERSION = "3.9.2-Lilian-20220807144000";
 const settingsVersion = 39;
 
 const bceChangelog = `${BCE_VERSION}
@@ -6988,7 +6988,7 @@ async function BondageClubEnhancements() {
 				let valid = true;
 				if (bceSettings.antiLoosenOwnerLock) {
 					if (C.ID === 0 && newItem.Difficulty !== previousFactor && !fromOwner && (previousItem.Asset.OwnerOnly || (lock && lock.Asset.OwnerOnly))) {
-						bceLog(`Anti loosen triggered on ${previousItem.Asset.Group}`);
+						bceLog(`Anti loosen triggered on ${previousItem.Asset.Name}`);
 						newItem.Difficulty = previousFactor;
 						valid = false;
 					}
