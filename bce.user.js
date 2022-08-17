@@ -39,7 +39,7 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const BCE_VERSION = "3.9.3-Lilian-20220813124300";
+const BCE_VERSION = "3.9.3-Lilian-20220817110400";
 const settingsVersion = 39;
 
 const bceChangelog = `${BCE_VERSION}
@@ -5855,7 +5855,7 @@ async function BondageClubEnhancements() {
 					const lock = InventoryGetLock(focusItem);
 					if (assetWorn(C, focusItem)) {
 						if (bceSettings.modifyDifficulty && canAccessDifficultyMenu()
-								&& !(bceSettings.antiLoosenOwnerLock && (focusItem.Asset.OwnerOnly || (lock && lock.Asset.OwnerOnly)))) {
+								&& !(bceSettings.antiLoosenOwnerLock && (focusItem.Asset.OwnerOnly || (lock && lock.Asset.OwnerOnly)) && !C.IsOwnedByPlayer())) {
 							DrawButton(
 								10,
 								890,
@@ -6588,7 +6588,8 @@ async function BondageClubEnhancements() {
 				if (!ChatRoomLastMessage || ChatRoomLastMessage.length == LastMessages
 						|| ChatRoomLastMessage[ChatRoomLastMessage.length - 1].startsWith("(")
 						|| ChatRoomLastMessage[ChatRoomLastMessage.length - 1].startsWith("（")
-						|| ChatRoomLastMessage[ChatRoomLastMessage.length - 1].startsWith("*")) {
+						|| ChatRoomLastMessage[ChatRoomLastMessage.length - 1].startsWith("*")
+						|| ChatRoomLastMessage[ChatRoomLastMessage.length - 1].startsWith("/")) {
 					return next(args);
 				}
 				const msg = ChatRoomLastMessage[ChatRoomLastMessage.length - 1];
