@@ -39,7 +39,7 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const BCE_VERSION = "3.9.4-Lilian-20220818213000";
+const BCE_VERSION = "3.9.4-Lilian-20220821203900";
 const settingsVersion = 39;
 
 const bceChangelog = `${BCE_VERSION}
@@ -7353,7 +7353,7 @@ async function BondageClubEnhancements() {
 						let maxIncrease = maxProgress - Character[C].ArousalSettings.Progress;
 						if (TimerLastArousalProgressCount % stepInterval === 0 && maxIncrease > 0) {
 							Character[C].BCEEnjoyment = 1 + (Factor > 1 ? Math.round(1.5*Math.log2(Factor)) : 0);
-							ActivityTimerProgress(Character[C],, 1);
+							ActivityTimerProgress(Character[C], 1);
 						}
 					}
 				} else {
