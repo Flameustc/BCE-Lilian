@@ -39,7 +39,7 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const BCE_VERSION = "3.9.4-Lilian-20220821203900";
+const BCE_VERSION = "3.9.4-Lilian-20220830194300";
 const settingsVersion = 39;
 
 const bceChangelog = `${BCE_VERSION}
@@ -7103,6 +7103,7 @@ async function BondageClubEnhancements() {
 		}
 	}
 
+	let callFunction = "";
 	async function antiLoosen() {
 		await waitFor(() => !!ServerSocket && ServerIsConnected);
 		// Anti-cheat on owner lock
@@ -7117,8 +7118,11 @@ async function BondageClubEnhancements() {
 				const previousFactor = previousItem.Difficulty - previousItem.Asset.Difficulty;
 				let valid = true;
 				if (bceSettings.antiLoosenOwnerLock) {
-					if (C.ID === 0 && newItem.Difficulty !== previousFactor && !fromOwner && (previousItem.Asset.OwnerOnly || (lock && lock.Asset.OwnerOnly))) {
-						bceLog(`Anti loosen triggered on ${previousItem.Asset.Name}`);
+					if (C.ID === 0 && callFunction === "ServerAppearanceLoadFromBundle" && newItem.Difficulty !== previousItem.Difficulty && !fromOwner && (previousItem.Asset.OwnerOnly || (lock && lock.Asset.OwnerOnly))) {
+						newItem.Difficulty = previousItem.Difficulty;
+						valid = false;
+					}
+					if (C.ID === 0 && callFunction === "ChatRoomSyncItem" && newItem.Difficulty !== previousFactor && !fromOwner && (previousItem.Asset.OwnerOnly || (lock && lock.Asset.OwnerOnly))) {
 						newItem.Difficulty = previousFactor;
 						valid = false;
 					}
@@ -7126,6 +7130,24 @@ async function BondageClubEnhancements() {
 				let result = next(args);
 				result.valid = result.valid && valid;
 				return result;
+			}
+		);
+
+		SDK.hookFunction(
+			"ServerAppearanceLoadFromBundle",
+			HOOK_PRIORITIES.Observe,
+			(args, next) => {
+				callFunction = "ServerAppearanceLoadFromBundle";
+				return next(args);
+			}
+		);
+
+		SDK.hookFunction(
+			"ChatRoomSyncItem",
+			HOOK_PRIORITIES.Observe,
+			(args, next) => {
+				callFunction = "ChatRoomSyncItem";
+				return next(args);
 			}
 		);
 	}
