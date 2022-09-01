@@ -39,7 +39,7 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const BCE_VERSION = "3.9.4-Lilian-20220830194300";
+const BCE_VERSION = "3.9.4-Lilian-20220901083700";
 const settingsVersion = 39;
 
 const bceChangelog = `${BCE_VERSION}
@@ -1456,6 +1456,7 @@ async function BondageClubEnhancements() {
 	pendingMessages();
 	hideHiddenItemsIcon();
 	crafting();
+	revampLilian();
 
 	// Post ready when in a chat room
 	await bceNotify(`Bondage Club Enhancements v${w.BCE_VERSION} Loaded`);
@@ -6473,19 +6474,6 @@ async function BondageClubEnhancements() {
 	async function antiGarbling() {
 		await waitFor(() => !!SpeechGarbleByGagLevel);
 				
-		// whisper patch for Lilian's slaves
-		SDK.hookFunction(
-			"ChatRoomShouldBlockGaggedOOCMessage",
-			HOOK_PRIORITIES.AddBehaviour,
-			(args, next) => {
-				const [, WhisperTarget] = args;
-				if (isWhisperWhitelist(WhisperTarget)) {
-					return false;
-				}
-				return next(args);
-			}
-		);
-
 		// gag patch for Lilian's slaves
 		SDK.hookFunction(
 			"Player.CanTalk",
@@ -6514,7 +6502,7 @@ async function BondageClubEnhancements() {
 						let item = C.Appearance[A];
 						let property = item.Property;
 						const Group = item.Asset.Group.Name;
-						let gagLevel = w.SpeechGetEffectGagLevel(getItemEffects(item));
+						let gagLevel = w.SpeechGetEffectGagLevel(getItemEffects(item, true));
 						const needClearGag = property && property.GagLevel && property.GagLevel > 0 && isNoGagEffect(item);
 						if (gagLevel > 0 || needClearGag) {
 							if (!property) {
@@ -6522,7 +6510,7 @@ async function BondageClubEnhancements() {
 									Effect: []
 								};
 							}
-							property.Effect = getItemEffects(item).filter(x => !x.startsWith("Gag"));
+							property.Effect = getItemEffects(item, false).filter(x => !x.startsWith("Gag"));
 							property.OverrideAssetEffect = true;
 							property.GagLevel = gagLevel;
 							item.Property = property;
@@ -6542,7 +6530,7 @@ async function BondageClubEnhancements() {
 				const [C, item] = args;
 				let property = item.Property;
 				const Group = item.Asset.Group.Name;
-				let gagLevel = w.SpeechGetEffectGagLevel(getItemEffects(item));
+				let gagLevel = w.SpeechGetEffectGagLevel(getItemEffects(item, true));
 				const needClearGag = property && property.GagLevel && property.GagLevel > 0 && isNoGagEffect(item);
 				if (C.ID === 0 && (gagLevel > 0 || needClearGag)) {
 					if (!property) {
@@ -6550,7 +6538,7 @@ async function BondageClubEnhancements() {
 							Effect: []
 						};
 					}
-					property.Effect = getItemEffects(item).filter(x => !x.startsWith("Gag"));
+					property.Effect = getItemEffects(item, false).filter(x => !x.startsWith("Gag"));
 					property.OverrideAssetEffect = true;
 					property.GagLevel = gagLevel;
 					item.Property = property;
@@ -6571,132 +6559,6 @@ async function BondageClubEnhancements() {
 						|| ChatRoomLastMessage[ChatRoomLastMessage.length - 1].startsWith("（")
 						|| ChatRoomLastMessage[ChatRoomLastMessage.length - 1].startsWith("*")
 						|| ChatRoomLastMessage[ChatRoomLastMessage.length - 1].startsWith("/")) {
-					return next(args);
-				}
-				const msg = ChatRoomLastMessage[ChatRoomLastMessage.length - 1];
-				if (Sensitivity == 3) {
-					// duplicate condition since R82
-					if (/\p{L}/u.test(msg)) {
-						return true;
-					}
-				}
-				if (Sensitivity >= 2) {
-					const rule = getDollTalk();
-					const words = Array.from(msg.matchAll(/[^\t\p{Z}\v.:!?~,;^]+/gmu)).map(i => i[0]);
-					if (rule.maxNumberOfWords > 0 && words.length > rule.maxNumberOfWords) {
-						return true;
-					}
-					if (rule.maxWordLength > 0 && words.some(word => word.length > rule.maxWordLength)) {
-						return true;
-					}
-				}
-				if (Sensitivity >= 1) {
-					const bannedWords = getBannedWords();
-					if (bannedWords.some(x => msg.toLocaleLowerCase().match(new RegExp(escapeRegExp(x.trim()), "iu")))) {
-						return true;
-					}
-				}
-				return next(args);
-			}
-		);
-
-		// whisper patch for Lilian's slaves
-		SDK.hookFunction(
-			"ChatRoomShouldBlockGaggedOOCMessage",
-			HOOK_PRIORITIES.AddBehaviour,
-			(args, next) => {
-				const [, WhisperTarget] = args;
-				if (isWhisperWhitelist(WhisperTarget)) {
-					return false;
-				}
-				return next(args);
-			}
-		);
-
-		// gag patch for Lilian's slaves
-		SDK.hookFunction(
-			"Player.CanTalk",
-			HOOK_PRIORITIES.OverrideBehaviour,
-			(args, next) => {
-				return (getTotalGagLevel(Player) === 0);
-			}			
-		);
-
-		patchFunction(
-			"ChatRoomStimulationMessage",
-			{
-				'const gagged = InventoryItemHasEffect(A, "GagTotal", true) || InventoryItemHasEffect(A, "GagTotal2", true);': 'const gagged = (A.Property?.GagLevel || 0) >= 8;'
-			},
-			"Talk stimulation events can't be triggered."
-		);
-
-		// known issue: craft property "Large" can't be bypassed
-		SDK.hookFunction(
-			"CharacterRefresh",
-			HOOK_PRIORITIES.ModifyBehaviourHigh,
-			(args, next) => {
-				const [C, push, ] = args;
-				if (C.ID === 0 && (push == null || push == true)) {
-					for (let A = 0; A < C.Appearance.length; A++) {
-						let item = C.Appearance[A];
-						let property = item.Property;
-						const Group = item.Asset.Group.Name;
-						let gagLevel = w.SpeechGetEffectGagLevel(getItemEffects(item));
-						const needClearGag = property && property.GagLevel && property.GagLevel > 0 && isNoGagEffect(item);
-						if (gagLevel > 0 || needClearGag) {
-							if (!property) {
-								property = {
-									Effect: []
-								};
-							}
-							property.Effect = getItemEffects(item).filter(x => !x.startsWith("Gag"));
-							property.OverrideAssetEffect = true;
-							property.GagLevel = gagLevel;
-							item.Property = property;
-							bceLog("Gag updated (self)");
-						}
-					}
-				}
-				next(args);
-			}
-		);
-
-		SDK.hookFunction(
-			"ValidationSanitizeProperties",
-			HOOK_PRIORITIES.AddBehaviour,
-			(args, next) => {
-				let changed = next(args);
-				const [C, item] = args;
-				let property = item.Property;
-				const Group = item.Asset.Group.Name;
-				let gagLevel = w.SpeechGetEffectGagLevel(getItemEffects(item));
-				const needClearGag = property && property.GagLevel && property.GagLevel > 0 && isNoGagEffect(item);
-				if (C.ID === 0 && (gagLevel > 0 || needClearGag)) {
-					if (!property) {
-						property = {
-							Effect: []
-						};
-					}
-					property.Effect = getItemEffects(item).filter(x => !x.startsWith("Gag"));
-					property.OverrideAssetEffect = true;
-					property.GagLevel = gagLevel;
-					item.Property = property;
-					bceLog("Gag updated (other)");
-					changed = true;
-				}
-				return changed;
-			}
-		);
-
-		SDK.hookFunction(
-			"InventoryItemNeckAccessoriesCollarAutoShockUnitDetectSpeech",
-			HOOK_PRIORITIES.ModifyBehaviourHigh,
-			(args, next) => {
-				const [Sensitivity, Emote, Keywords, LastMessages] = args;
-				if (!ChatRoomLastMessage || ChatRoomLastMessage.length == LastMessages
-						|| ChatRoomLastMessage[ChatRoomLastMessage.length - 1].startsWith("(")
-						|| ChatRoomLastMessage[ChatRoomLastMessage.length - 1].startsWith("（")
-						|| ChatRoomLastMessage[ChatRoomLastMessage.length - 1].startsWith("*")) {
 					return next(args);
 				}
 				const msg = ChatRoomLastMessage[ChatRoomLastMessage.length - 1];
@@ -9832,6 +9694,60 @@ async function BondageClubEnhancements() {
 		);
 	}
 
+	async function revampLilian() {
+		await waitFor(() => !!ServerSocket && ServerIsConnected);
+		
+		// whisper patch for Lilian's slaves
+		SDK.hookFunction(
+			"ChatRoomShouldBlockGaggedOOCMessage",
+			HOOK_PRIORITIES.AddBehaviour,
+			(args, next) => {
+				const [, WhisperTarget] = args;
+				if (isWhisperWhitelist(WhisperTarget)) {
+					return false;
+				}
+				return next(args);
+			}
+		);
+
+		// Ruin orgasm with a shock
+		SDK.hookFunction(
+			"ActivityOrgasmStop",
+			HOOK_PRIORITIES.AddBehaviour,
+			/** @type {(args: [Character, number], next: (args: [Character, number]) => void) => void} */
+			(args, next) => {
+				const [C,] = args;
+				if (C.ID === 0 && CurrentScreen == "ChatRoom" && ActivityOrgasmRuined) {
+					for (const item of C.Appearance.filter((x) => x.Craft && x.Craft.Description.includes("[DenyShock]"))) {
+						const intensity = 2;
+						var msg = "TriggerShock" + intensity;
+						var Dictionary = [];
+						Dictionary.push({ Tag: "DestinationCharacterName", Text: CharacterNickname(C), MemberNumber: C.MemberNumber });
+						Dictionary.push({ Tag: "AssetName", AssetName: item.Asset.Name});
+						Dictionary.push({ ShockIntensity : intensity});			
+						ServerSend("ChatRoomChat", { Content: msg, Type: "Action", Dictionary });
+	
+					}
+				}
+				next(args);
+			}
+		);
+
+		patchFunction("ActivityOrgasmGameGenerate",
+			{
+				"ActivityOrgasmStop(Player, 70);": "ActivityOrgasmRuined = false; ActivityOrgasmStop(Player, 70);"
+			},
+			"Revamp of vanilla OrgasmFailResist"
+		);
+
+		patchFunction("ActivityOrgasmControl",
+			{
+				"if (ActivityOrgasmGameProgress >= ActivityOrgasmGameDifficulty - 1 || CurrentTime > Player.ArousalSettings.OrgasmTimer - 500) {": "if (CurrentTime > Player.ArousalSettings.OrgasmTimer - 500) {"
+			},
+			"Revamp of vanilla OrgasmFailResist"
+		);
+	}
+
 	function hideChatRoomElements() {
 		document.getElementById("InputChat").style.display = "none";
 		document.getElementById("TextAreaChatLog").style.display = "none";
@@ -9999,8 +9915,8 @@ async function BondageClubEnhancements() {
 		return isNonNullObject(c) && (c.MemberNumber === 40035 || c.MemberNumber === 63172);
 	}
 
-	/** @type {(item: Item) => string[]} */
-	function getItemEffects(item) {
+	/** @type {(item: Item, useOverride: boolean) => string[]} */
+	function getItemEffects(item, useOverride) {
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
 		let itemEffects = [];
 		let overrideAsset = false;
@@ -10009,7 +9925,7 @@ async function BondageClubEnhancements() {
 			w.CommonArrayConcatDedupe(itemEffects, item.Property.Effect);
 			overrideAsset = !!item.Property.OverrideAssetEffect;
 		}
-		if (!overrideAsset) {
+		if (!useOverride || !overrideAsset) {
 			if (Array.isArray(item.Asset.Effect)) {
 				w.CommonArrayConcatDedupe(itemEffects, item.Asset.Effect);
 			} else if (Array.isArray(item.Asset.Group.Effect)) {
