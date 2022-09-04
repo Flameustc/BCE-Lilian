@@ -39,7 +39,7 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const BCE_VERSION = "3.10.5-Lilian-20220901104900";
+const BCE_VERSION = "3.10.5-Lilian-20220904115700";
 const settingsVersion = 40;
 
 const bceChangelog = `${BCE_VERSION}
@@ -6647,6 +6647,18 @@ async function BondageClubEnhancements() {
 					const msg = data.Content;
 					const soundWhitelist = getSoundWhitelist();
 					const useWhitelist = soundWhitelist.length > 0;
+
+					let garbleSound = [];
+					for (const item of Player.Appearance.filter((x) => x.Craft && x.Craft.Description.includes("[Garble="))) {
+						const match = item.Craft.Description.match(/\[Garble=(.+)\]/u);
+						if (match) {
+							garbleSound = garbleSound.concat(match[1].split(','));
+						}
+					}
+					if (garbleSound.length === 0) {
+						garbleSound = ['呜'];
+					}
+
 					let inOOC = false;
 					let allowHyphen = false;
 					let str = [];
@@ -6682,7 +6694,7 @@ async function BondageClubEnhancements() {
 								i = bestMatch;
 								continue;
 							}
-							const res = garbleMessage(msg[i], allowHyphen);
+							const res = garbleMessage(msg[i], garbleSound, allowHyphen);
 							str.push(res[0]);
 							allowHyphen = res[1];
 							i++;
@@ -6695,7 +6707,7 @@ async function BondageClubEnhancements() {
 							str.push(msg[i++]);
 							continue;
 						} else {
-							const res = garbleMessage(msg[i], allowHyphen);
+							const res = garbleMessage(msg[i], garbleSound, allowHyphen);
 							str.push(res[0]);
 							allowHyphen = res[1];
 							i++;
@@ -10299,7 +10311,7 @@ async function BondageClubEnhancements() {
 		}
 	}
 
-	function garbleMessage(c, allowHyphen) {
+	function garbleMessage(c, garbleSound, allowHyphen) {
 		if (/^\p{N}/u.test(c)) {
 			return ["*", false];
 		} else if (/^\p{Lu}/u.test(c)) {
@@ -10308,8 +10320,8 @@ async function BondageClubEnhancements() {
 			return ["m", false];
 		} else if (allowHyphen && Math.random() < 0.7) {
 			return ["—", true];
-		} else {
-			return ["呜", true];
+		} else {		
+			return [garbleSound[Math.floor(Math.random() * garbleSound.length)], true];
 		}
 	}
 
