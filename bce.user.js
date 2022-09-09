@@ -39,7 +39,7 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const BCE_VERSION = "3.10.5-Lilian-20220904115700";
+const BCE_VERSION = "3.10.5-Lilian-20220909005600";
 const settingsVersion = 40;
 
 const bceChangelog = `${BCE_VERSION}
@@ -6493,6 +6493,14 @@ async function BondageClubEnhancements() {
 		);
 
 		patchFunction(
+			"ActivityCheckPrerequisite",
+			{
+				"return !acting.CanTalk();": "return acting.IsMouthBlocked();"
+			},
+			"Gagged action can't be used."
+		);
+
+		patchFunction(
 			"ChatRoomStimulationMessage",
 			{
 				'const gagged = InventoryItemHasEffect(A, "GagTotal", true) || InventoryItemHasEffect(A, "GagTotal2", true);': 'const gagged = (A.Property?.GagLevel || 0) >= 8;'
@@ -10011,7 +10019,7 @@ async function BondageClubEnhancements() {
 			/** @type {(args: [Character, number], next: (args: [Character, number]) => void) => void} */
 			(args, next) => {
 				const [C,] = args;
-				if (C.ID === 0 && CurrentScreen == "ChatRoom" && ActivityOrgasmRuined) {
+				if (C.ID === 0 && CurrentScreen == "ChatRoom" && AfkTimerIdle === 0 && ActivityOrgasmRuined) {
 					for (const item of C.Appearance.filter((x) => x.Craft && x.Craft.Description.includes("[DenyShock]"))) {
 						const intensity = 2;
 						var msg = "TriggerShock" + intensity;
