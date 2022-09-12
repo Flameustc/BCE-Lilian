@@ -39,7 +39,7 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const BCE_VERSION = "3.10.5-Lilian-20220909005600";
+const BCE_VERSION = "3.10.5-Lilian-20220912124900";
 const settingsVersion = 40;
 
 const bceChangelog = `${BCE_VERSION}
@@ -10026,9 +10026,9 @@ async function BondageClubEnhancements() {
 						var Dictionary = [];
 						Dictionary.push({ Tag: "DestinationCharacterName", Text: CharacterNickname(C), MemberNumber: C.MemberNumber });
 						Dictionary.push({ Tag: "AssetName", AssetName: item.Asset.Name});
-						Dictionary.push({ ShockIntensity : intensity});			
+						Dictionary.push({ ShockIntensity : intensity});
+						Dictionary.push({ Automatic: true });
 						ServerSend("ChatRoomChat", { Content: msg, Type: "Action", Dictionary });
-	
 					}
 				}
 				next(args);
