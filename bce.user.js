@@ -39,7 +39,7 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const BCE_VERSION = "3.10.5-Lilian-20220912124900";
+const BCE_VERSION = "3.10.5-Lilian-20220914002500";
 const settingsVersion = 40;
 
 const bceChangelog = `${BCE_VERSION}
@@ -10048,6 +10048,63 @@ async function BondageClubEnhancements() {
 			},
 			"Revamp of vanilla OrgasmFailResist"
 		);
+
+		// Add new activities
+		SDK.hookFunction(
+			"ActivityAllowedForGroup",
+			HOOK_PRIORITIES.AddBehaviour,
+			/** @type {(args: [Character, string, boolean], next: (args: [Character, string, boolean]) => Array) => Array} */
+			(args, next) => {
+				const [C, groupname, ] = args;
+				const activities = AssetAllActivities(C.AssetFamily);
+				const group = ActivityGetGroupOrMirror(C.AssetFamily, groupname);
+				let result = next(args);
+				if (C.ID === 0 && CurrentCharacter && CurrentCharacter.ID !== 0) {
+					const penetrate = activities.filter((x) => x.Target.includes(groupname) && x.Prerequisite.includes("Needs-PenetrateItem"));
+					result = [...result, ...penetrate.filter((x) => ActivityCheckPrerequisites(x, CurrentCharacter, Player, group))];
+				}
+				return result;
+			}
+		);
+
+		SDK.hookFunction(
+			"ActivityBuildChatTag",
+			HOOK_PRIORITIES.AddBehaviour,
+			(args, next) => {
+				const C = args[0];
+				const activities = AssetAllActivities(C.AssetFamily);
+				let tag = next(args);
+				if (activities.filter((x) => x.Prerequisite.includes("Needs-PenetrateItem")).some((x) => tag.includes(x.Name))) {
+					tag = tag.replace("ChatSelf", "ChatOther");
+				}
+				return tag;
+			}
+		);
+
+		SDK.hookFunction(
+			"ActivityRun",
+			HOOK_PRIORITIES.AddBehaviour,
+			/** @type {(args: [Character, Activity], next: (args: [Character, Activity]) => void) => void} */
+			(args, next) => {
+				const [C, Activity] = args;
+				const group = ActivityGetGroupOrMirror(C.AssetFamily, C.FocusGroup.Name);
+				if (CurrentScreen == "ChatRoom") {
+					if (C.ID === 0 && CurrentCharacter && CurrentCharacter.ID !== 0 && Activity.Prerequisite.includes("Needs-PenetrateItem")) {
+						ActivityEffect(CurrentCharacter, Player, Activity, group.Name);
+						bceSendAction(`${CharacterNickname(Player)}爬到${CharacterNickname(CurrentCharacter)}的跟前，用自己的身体主动侍奉起来。`);
+						const Dictionary = [];
+						Dictionary.push({ Tag: "SourceCharacter", Text: CharacterNickname(CurrentCharacter), MemberNumber: CurrentCharacter.MemberNumber });
+						Dictionary.push({ Tag: "TargetCharacter", Text: CharacterNickname(Player), MemberNumber: Player.MemberNumber });
+						Dictionary.push({ Tag: "ActivityGroup", Text: group.Name });
+						Dictionary.push({ Tag: "ActivityName", Text: Activity.Name });
+						ServerSend("ChatRoomChat", { Content: ActivityBuildChatTag(CurrentCharacter, group, Activity), Type: "Activity", Dictionary: Dictionary });
+						DialogLeave();
+						return;
+					}
+				}
+				return next(args);
+			}
+		)
 	}
 
 	function hideChatRoomElements() {
