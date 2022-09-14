@@ -489,6 +489,7 @@ declare global {
   };
   type Activity = {
     Prerequisite: string[];
+    CustomData?: string;
   };
   type Craft = {
     Color: string;

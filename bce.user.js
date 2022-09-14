@@ -39,7 +39,7 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const BCE_VERSION = "3.10.5-Lilian-20220914002500";
+const BCE_VERSION = "3.10.5-Lilian-20220914105100";
 const settingsVersion = 40;
 
 const bceChangelog = `${BCE_VERSION}
@@ -10090,7 +10090,8 @@ async function BondageClubEnhancements() {
 				const group = ActivityGetGroupOrMirror(C.AssetFamily, C.FocusGroup.Name);
 				if (CurrentScreen == "ChatRoom") {
 					if (C.ID === 0 && CurrentCharacter && CurrentCharacter.ID !== 0 && Activity.Prerequisite.includes("Needs-PenetrateItem")) {
-						ActivityEffect(CurrentCharacter, Player, Activity, group.Name);
+						Activity.CustomData = "用自己的{last_orgasm_data.zone}主动侍奉{last_orgasm_data.target_name}{honorific}，自己也到达了高潮。";
+						ActivityRunSelf(Player, CurrentCharacter, Activity);
 						bceSendAction(`${CharacterNickname(Player)}爬到${CharacterNickname(CurrentCharacter)}的跟前，用自己的身体主动侍奉起来。`);
 						const Dictionary = [];
 						Dictionary.push({ Tag: "SourceCharacter", Text: CharacterNickname(CurrentCharacter), MemberNumber: CurrentCharacter.MemberNumber });
