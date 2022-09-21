@@ -8422,7 +8422,7 @@ async function BondageClubEnhancements() {
 				}
 				if (data.Result && bceSettings.instantMessenger) {
 					const forbid = BCX?.getRuleState("speech_restrict_instant_messenger")?.inEffect;
-					const allowedMembers = BCX?.getRuleState("speech_restrict_instant_messenger")?.customData.allowedMembers;
+					const allowedMembers = forbid ? BCX?.getRuleState("speech_restrict_instant_messenger")?.customData.allowedMembers : [];
 					for (const friend of data.Result) {
 						const f = handleUnseenFriend(friend.MemberNumber);
 						if (!forbid || allowedMembers.includes(friend.MemberNumber)) {
