@@ -39,7 +39,7 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const BCE_VERSION = "3.12.2-Lilian-20220922001000";
+const BCE_VERSION = "3.12.2-Lilian-20220926195700";
 const settingsVersion = 40;
 
 const bceChangelog = `${BCE_VERSION}
@@ -6619,7 +6619,7 @@ async function BondageClubEnhancements() {
 					if (BCX?.getRuleState("speech_doll_talk")?.inEffect) {
 						const maxNumberOfWords = BCX?.getRuleState("speech_doll_talk")?.customData.maxNumberOfWords;
 						const maxWordLength = BCX?.getRuleState("speech_doll_talk")?.customData.maxWordLength;
-						const words = Array.from(msg.matchAll(/[^\t\p{Z}\v.:!?~,;^]+/gmu)).map(i => i[0]);
+						const words = Array.from(msg.matchAll(/[\p{L}\p{N}]+/gmu)).map(i => i[0]);
 						if (maxNumberOfWords > 0 && words.length > maxNumberOfWords) {
 							return true;
 						}
@@ -9890,7 +9890,19 @@ async function BondageClubEnhancements() {
 				}
 				return next(args);
 			}
-		)
+		);
+
+		SDK.hookFunction(
+			"InventoryCraft",
+			HOOK_PRIORITIES.AddBehaviour,
+			(args, next) => {
+				const Craft = args[3];
+				if (Craft.Color === "") {
+					Craft.Color = null;
+				}
+				return next(args);
+			}
+		);
 	}
 
 	function hideChatRoomElements() {
@@ -10047,6 +10059,34 @@ async function BondageClubEnhancements() {
 	function deepCopy(o) {
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-return
 		return JSON.parse(JSON.stringify(o));
+	}
+
+	function deepEqual(a, b)
+	{
+		if((typeof a == 'object' && a != null) && (typeof b == 'object' && b != null))
+		{
+			var count = [0,0];
+			for (var key in a)
+				count[0]++;
+			for (var key in b)
+				count[1]++;
+			if (count[0] != count[1]) {
+				return false;
+			}
+			for (var key in a) {
+				if (!(key in b) || !deepEqual(a[key], b[key])) {
+					return false;
+				}
+			}
+			for(var key in b) {
+				if (!(key in a) || !deepEqual(b[key],a[key])) {
+					return false;
+				}
+			}
+			return true;
+		} else {
+			return a === b;
+		}
 	}
 
 	/** @type {(c: unknown) => boolean} */
