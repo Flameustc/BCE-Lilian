@@ -9849,7 +9849,7 @@ async function ForBetterClub() {
 					// Default max intensity on all items. If tried to resist but failed, one total intensity level per 2 remaining counts
 					let totalIntensity = C.Appearance.filter((x) => x.Craft && x.Craft.Description.includes("[DenyShock]")).length * 3;
 					const step = 2;
-					const priority = ["ItemVulva", "ItemButt", "ItemPelvis", "ItemVulvaPiercings", "ItemNipples"];
+					const priority = ["ItemVulva", "ItemButt", "ItemPelvis", "ItemVulvaPiercings", "ItemBreast", "ItemNipples", "ItemNipplesPiercings", "ItemDevices"];
 					if (Player.ArousalSettings.OrgasmStage > 0 && ActivityOrgasmGameProgress > 0 && ActivityOrgasmGameDifficulty > ActivityOrgasmGameProgress) {
 						totalIntensity = Math.min(totalIntensity, Math.ceil(
 							(ActivityOrgasmGameDifficulty - ActivityOrgasmGameProgress) / (step * (CommonIsMobile ? 1.5 : 1))));
