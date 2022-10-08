@@ -39,7 +39,7 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const FBC_VERSION = "4.1-Lilian-20221008122000";
+const FBC_VERSION = "4.1-Lilian-20221008160500";
 const settingsVersion = 44;
 
 const fbcChangelog = `${FBC_VERSION}
@@ -3370,9 +3370,17 @@ async function ForBetterClub() {
 			"CommandParse",
 			{
 				"// Regular chat can be prevented with an owner presence rule":
-					"// Regular chat can be prevented with an owner presence rule\nmsg = (Player.Appearance.reduce((sum, A) => sum + (A.Property?.GagLevel || 0), 0) > 0) ? msg : bceMessageReplacements(msg);",
+					`// Regular chat can be prevented with an owner presence rule
+					msg = ((
+						Player.Appearance.reduce((sum, A) => sum + (A.Property?.GagLevel || 0), 0)
+						+ (InventoryCraftCount(Player, "Large") * 2) - (InventoryCraftCount(Player, "Small") * 2)
+						) > 0) ? msg : bceMessageReplacements(msg);`,
 				"// The whispers get sent to the server and shown on the client directly":
-					"// The whispers get sent to the server and shown on the client directly\nmsg = ((Player.Appearance.reduce((sum, A) => sum + (A.Property?.GagLevel || 0), 0) > 0) || msg.startsWith(\"!\")) ? msg : bceMessageReplacements(msg);",
+					`// The whispers get sent to the server and shown on the client directly
+					msg = ((
+						Player.Appearance.reduce((sum, A) => sum + (A.Property?.GagLevel || 0), 0)
+						+ (InventoryCraftCount(Player, "Large") * 2) - (InventoryCraftCount(Player, "Small") * 2)
+						) > 0 || msg.startsWith("!")) ? msg : bceMessageReplacements(msg);`,
 			},
 			"No link or OOC parsing for sent whispers."
 		);
@@ -9838,15 +9846,42 @@ async function ForBetterClub() {
 			(args, next) => {
 				const [C,] = args;
 				if (C.ID === 0 && CurrentScreen == "ChatRoom" && AfkTimerIdle === 0 && ActivityOrgasmRuined) {
-					for (const item of C.Appearance.filter((x) => x.Craft && x.Craft.Description.includes("[DenyShock]"))) {
-						const intensity = 2;
-						var msg = "TriggerShock" + intensity;
+					// Default max intensity on all items. If tried to resist but failed, one total intensity level per 2 remaining counts
+					let totalIntensity = C.Appearance.filter((x) => x.Craft && x.Craft.Description.includes("[DenyShock]")).length * 3;
+					const step = 2;
+					const priority = ["ItemVulva", "ItemButt", "ItemPelvis", "ItemVulvaPiercings", "ItemNipples"];
+					if (Player.ArousalSettings.OrgasmStage > 0 && ActivityOrgasmGameProgress > 0 && ActivityOrgasmGameDifficulty > ActivityOrgasmGameProgress) {
+						totalIntensity = Math.min(totalIntensity, Math.ceil(
+							(ActivityOrgasmGameDifficulty - ActivityOrgasmGameProgress) / (step * (CommonIsMobile ? 1.5 : 1))));
+					}
+					for (const item of C.Appearance
+							.filter((x) => x.Craft && x.Craft.Description.includes("[DenyShock]"))
+							.sort((a, b) => {
+								const pa = priority.findIndex((x) => x === a.Asset.Group.Name);
+								const pb = priority.findIndex((x) => x === b.Asset.Group.Name);
+								if (pa >= 0 && pb >= 0) {
+									return pa - pb;
+								} else if (pa >= 0 && pb < 0) {
+									return -1;
+								} else if (pb >= 0 && pa < 0) {
+									return 1;
+								} else {
+									return (a.Asset.Group.Name < b.Asset.Group.Name) ? -1 : 1;
+								}
+							})
+					) {
+						const intensity = Math.min(totalIntensity, 3);
+						if (intensity === 0) {
+							break;
+						}
+						var msg = "TriggerShock" + (intensity - 1);
 						var Dictionary = [];
 						Dictionary.push({ Tag: "DestinationCharacterName", Text: CharacterNickname(C), MemberNumber: C.MemberNumber });
 						Dictionary.push({ Tag: "AssetName", AssetName: item.Asset.Name});
 						Dictionary.push({ ShockIntensity : intensity});
 						Dictionary.push({ Automatic: true });
 						ServerSend("ChatRoomChat", { Content: msg, Type: "Action", Dictionary });
+						totalIntensity -= intensity;
 					}
 				}
 				next(args);
