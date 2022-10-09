@@ -39,7 +39,7 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const FBC_VERSION = "4.1-Lilian-20221008160500";
+const FBC_VERSION = "4.1-Lilian-20221010004500";
 const settingsVersion = 44;
 
 const fbcChangelog = `${FBC_VERSION}
@@ -9835,6 +9835,40 @@ async function ForBetterClub() {
 					return false;
 				}
 				return next(args);
+			}
+		);
+
+		// Always start AfkTimer
+		SDK.hookFunction(
+			"AfkTimerSetEnabled",
+			HOOK_PRIORITIES.OverrideBehaviour,
+			(args, next) => {
+				const Enabled = args[0];
+				if (typeof Enabled === 'boolean') {
+					AfkTimerIsEnabled = Enabled;
+				}
+				return;
+			}
+		);
+
+		SDK.hookFunction(
+			"AfkTimerSetIsAfk",
+			HOOK_PRIORITIES.OverrideBehaviour,
+			(args, next) => {
+				if (AfkTimerIsEnabled) {
+					return next(args);
+				} else {
+					return;
+				}
+			}
+		);
+
+		SDK.hookFunction(
+			"PreferenceInitPlayer",
+			HOOK_PRIORITIES.AddBehaviour,
+			(args, next) => {
+				next(args);
+				AfkTimerStart();
 			}
 		);
 
