@@ -1,5 +1,7 @@
 /* eslint-disable */
 
+import { ModSDKGlobalAPI } from "./types/bcModSdk";
+
 export {};
 
 declare global {
@@ -30,6 +32,7 @@ declare global {
   var bceStripBeepMetadata: (text: string) => string;
   var bce_ArousalExpressionStages: ArousalExpressionStages;
   var bce_ActivityTriggers: ActivityTrigger[];
+  var bcModSdk: ModSDKGlobalAPI | undefined;
   var ActivityDictionary: string[][];
   var ActivityCheckPrerequisite: (
     pre: string,
@@ -50,6 +53,9 @@ declare global {
     mode: "Slot" | "Item" | "Property" | "Lock" | "Name" | "Color"
   ) => void;
   var CraftingItemListBuild: () => void;
+  var ChatRoomRegisterMessageHandler: (handler: ChatRoomMessageHandler) => void;
+  var ChatRoomHTMLEntities: (text: string) => string;
+  var SpeechGarble: (C: Character, text: string) => string;
   var CharacterLoadSimple: (accName: string) => Character;
   var CharacterDelete: (accName: string) => void;
   var CharacterNaked: (C: Character) => void;
@@ -859,4 +865,17 @@ declare global {
   type SocketEventListenerRegister = [ServerSocketEvent, SocketEventListener][];
 
   type SocketEventListener = () => Promise<void> | void;
+
+  interface ChatRoomMessageHandler {
+    Description?: string;
+    Priority: number;
+    Callback: (
+      data: ChatMessage,
+      sender: Character,
+      msg: string,
+      metadata?: any
+    ) =>
+      | boolean
+      | { msg?: string; skip?: (handler: ChatRoomMessageHandler) => boolean };
+  }
 }
