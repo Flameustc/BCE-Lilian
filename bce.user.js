@@ -6707,7 +6707,7 @@ async function ForBetterClub() {
 		);
 
 		// ServerSend hook for client-side gagspeak, priority lower than BCX's whisper dictionary hook
-		SDK.hookFunction("ServerSend", 0, (args, next) => {
+		SDK.hookFunction("ServerSend", 1, (args, next) => {
 			if (args.length < 2) {
 				return next(args);
 			}
