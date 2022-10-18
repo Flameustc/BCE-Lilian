@@ -3407,7 +3407,8 @@ async function ForBetterClub() {
 					msg = ((
 						Player.Appearance.reduce((sum, A) => sum + (A.Property?.GagLevel || 0), 0)
 						+ (InventoryCraftCount(Player, "Large") * 2) - (InventoryCraftCount(Player, "Small") * 2)
-						) > 0) ? msg : bceMessageReplacements(msg);`,
+						) > 0) ? msg : bceMessageReplacements(msg);
+					//`,
 				"// The whispers get sent to the server and shown on the client directly":
 					`// The whispers get sent to the server and shown on the client directly
 					msg = ((
@@ -3508,6 +3509,8 @@ async function ForBetterClub() {
 						endSounds_CN[Math.floor(Math.random() * endSounds_CN.length)];
 					let sounds = `${startSound}${sound}${endSound}`;
 					if (Player.ArousalSettings.Progress > 90) {
+						sounds = sounds.replace(/❤/gu, "💗");
+					} else if (Player.ArousalSettings.Progress > 80) {
 						sounds = sounds.replace(/❤/gu, "❤️");
 					}
 					results.push(" ", sounds, " ");
@@ -6599,7 +6602,7 @@ async function ForBetterClub() {
 		patchFunction(
 			"ActivityCheckPrerequisite",
 			{
-				"return !acting.CanTalk();": "return acting.IsMouthBlocked();"
+				"return acting.IsGagged();": "return acting.IsMouthBlocked();"
 			},
 			"Gagged action can't be used."
 		);
