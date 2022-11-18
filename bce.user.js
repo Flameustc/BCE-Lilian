@@ -39,7 +39,7 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const FBC_VERSION = "4.4-Lilian-20221018091000";
+const FBC_VERSION = "4.4-Lilian-20221019010300";
 const settingsVersion = 44;
 
 const fbcChangelog = `${FBC_VERSION}
@@ -10072,63 +10072,63 @@ async function ForBetterClub() {
 			"Revamp of vanilla OrgasmFailResist"
 		);
 
-		// Add new activities
-		SDK.hookFunction(
-			"ActivityAllowedForGroup",
-			HOOK_PRIORITIES.AddBehaviour,
-			/** @type {(args: [Character, string, boolean], next: (args: [Character, string, boolean]) => Array) => Array} */
-			(args, next) => {
-				const [C, groupname, ] = args;
-				const activities = AssetAllActivities(C.AssetFamily);
-				const group = ActivityGetGroupOrMirror(C.AssetFamily, groupname);
-				let result = next(args);
-				if (C.ID === 0 && CurrentCharacter && CurrentCharacter.ID !== 0) {
-					const penetrate = activities.filter((x) => x.Target.includes(groupname) && x.Prerequisite.includes("Needs-PenetrateItem"));
-					result = [...result, ...penetrate.filter((x) => ActivityCheckPrerequisites(x, CurrentCharacter, Player, group))];
-				}
-				return result;
-			}
-		);
+		// Add new activities, diabled since R85 because her/herself is now determined by SenderCharacter instead of SourceCharacter
+		// SDK.hookFunction(
+		// 	"ActivityAllowedForGroup",
+		// 	HOOK_PRIORITIES.AddBehaviour,
+		// 	/** @type {(args: [Character, string, boolean], next: (args: [Character, string, boolean]) => Array) => Array} */
+		// 	(args, next) => {
+		// 		const [C, groupname, ] = args;
+		// 		const activities = AssetAllActivities(C.AssetFamily);
+		// 		const group = ActivityGetGroupOrMirror(C.AssetFamily, groupname);
+		// 		let result = next(args);
+		// 		if (C.ID === 0 && CurrentCharacter && CurrentCharacter.ID !== 0) {
+		// 			const penetrate = activities.filter((x) => x.Target.includes(groupname) && x.Prerequisite.includes("Needs-PenetrateItem"));
+		// 			result = [...result, ...penetrate.filter((x) => ActivityCheckPrerequisites(x, CurrentCharacter, Player, group))];
+		// 		}
+		// 		return result;
+		// 	}
+		// );
 
-		SDK.hookFunction(
-			"ActivityBuildChatTag",
-			HOOK_PRIORITIES.AddBehaviour,
-			(args, next) => {
-				const C = args[0];
-				const activities = AssetAllActivities(C.AssetFamily);
-				let tag = next(args);
-				if (activities.filter((x) => x.Prerequisite.includes("Needs-PenetrateItem")).some((x) => tag.includes(x.Name))) {
-					tag = tag.replace("ChatSelf", "ChatOther");
-				}
-				return tag;
-			}
-		);
+		// SDK.hookFunction(
+		// 	"ActivityBuildChatTag",
+		// 	HOOK_PRIORITIES.AddBehaviour,
+		// 	(args, next) => {
+		// 		const C = args[0];
+		// 		const activities = AssetAllActivities(C.AssetFamily);
+		// 		let tag = next(args);
+		// 		if (activities.filter((x) => x.Prerequisite.includes("Needs-PenetrateItem")).some((x) => tag.includes(x.Name))) {
+		// 			tag = tag.replace("ChatSelf", "ChatOther");
+		// 		}
+		// 		return tag;
+		// 	}
+		// );
 
-		SDK.hookFunction(
-			"ActivityRun",
-			HOOK_PRIORITIES.AddBehaviour,
-			/** @type {(args: [Character, Activity], next: (args: [Character, Activity]) => void) => void} */
-			(args, next) => {
-				const [C, Activity] = args;
-				const group = ActivityGetGroupOrMirror(C.AssetFamily, C.FocusGroup.Name);
-				if (CurrentScreen == "ChatRoom") {
-					if (C.ID === 0 && CurrentCharacter && CurrentCharacter.ID !== 0 && Activity.Prerequisite.includes("Needs-PenetrateItem")) {
-						Activity.CustomData = "用自己的{last_orgasm_data.zone}主动侍奉{last_orgasm_data.target_name}{honorific}，自己也到达了高潮。";
-						ActivityRunSelf(Player, CurrentCharacter, Activity);
-						bceSendAction(`${CharacterNickname(Player)}爬到${CharacterNickname(CurrentCharacter)}的跟前，用自己的身体主动侍奉起来。`);
-						const Dictionary = [];
-						Dictionary.push({ Tag: "SourceCharacter", Text: CharacterNickname(CurrentCharacter), MemberNumber: CurrentCharacter.MemberNumber });
-						Dictionary.push({ Tag: "TargetCharacter", Text: CharacterNickname(Player), MemberNumber: Player.MemberNumber });
-						Dictionary.push({ Tag: "ActivityGroup", Text: group.Name });
-						Dictionary.push({ Tag: "ActivityName", Text: Activity.Name });
-						ServerSend("ChatRoomChat", { Content: ActivityBuildChatTag(CurrentCharacter, group, Activity), Type: "Activity", Dictionary: Dictionary });
-						DialogLeave();
-						return;
-					}
-				}
-				return next(args);
-			}
-		);
+		// SDK.hookFunction(
+		// 	"ActivityRun",
+		// 	HOOK_PRIORITIES.AddBehaviour,
+		// 	/** @type {(args: [Character, Activity], next: (args: [Character, Activity]) => void) => void} */
+		// 	(args, next) => {
+		// 		const [C, Activity] = args;
+		// 		const group = ActivityGetGroupOrMirror(C.AssetFamily, C.FocusGroup.Name);
+		// 		if (CurrentScreen == "ChatRoom") {
+		// 			if (C.ID === 0 && CurrentCharacter && CurrentCharacter.ID !== 0 && Activity.Prerequisite.includes("Needs-PenetrateItem")) {
+		// 				Activity.CustomData = "用自己的{last_orgasm_data.zone}主动侍奉{last_orgasm_data.target_name}{honorific}，自己也到达了高潮。";
+		// 				ActivityRunSelf(Player, CurrentCharacter, Activity);
+		// 				fbcSendAction(`${CharacterNickname(Player)}爬到${CharacterNickname(CurrentCharacter)}的跟前，用自己的身体主动侍奉起来。`);
+		// 				const Dictionary = [];
+		// 				Dictionary.push({ Tag: "SourceCharacter", Text: CharacterNickname(CurrentCharacter), MemberNumber: CurrentCharacter.MemberNumber });
+		// 				Dictionary.push({ Tag: "TargetCharacter", Text: CharacterNickname(Player), MemberNumber: Player.MemberNumber });
+		// 				Dictionary.push({ Tag: "ActivityGroup", Text: group.Name });
+		// 				Dictionary.push({ Tag: "ActivityName", Text: Activity.Name });
+		// 				ServerSend("ChatRoomChat", { Content: ActivityBuildChatTag(CurrentCharacter, group, Activity), Type: "Activity", Dictionary: Dictionary });
+		// 				DialogLeave();
+		// 				return;
+		// 			}
+		// 		}
+		// 		return next(args);
+		// 	}
+		// );
 
 		SDK.hookFunction(
 			"InventoryCraft",
