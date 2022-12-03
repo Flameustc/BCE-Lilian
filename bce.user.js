@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name Bondage Club Enhancements
 // @namespace https://www.bondageprojects.com/
-// @version 4.10
+// @version 4.13
 // @description FBC - For Better Club - enhancements for the bondage club - old name kept in tampermonkey for compatibility
 // @author Sidious
 // @match https://bondageprojects.elementfx.com/*
@@ -39,24 +39,23 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const FBC_VERSION = "4.10-Lilian-20221130100100";
+const FBC_VERSION = "4.13-Lilian-20221203105000";
 const settingsVersion = 44;
 
 const fbcChangelog = `${FBC_VERSION}
-- fix craft import
+- added a fix for leashing between different language rooms
+- fixed another error in /w
+- bcx update
 
-4.9
-- update to bcModSDK 1.1
-- eval scope fix
-- more powerful fbcdebug
+4.12
+- disabled difficulty adjustment for locked items you do not have keys for
+- fixed an error in /w with not found numeric target
+- more optimistic patching now that debug tracking is more robust and errors caught at functional level
 
-4.8
-- added R86 compatibility
-- removed R85 compatibility
-
-4.7
-- removed R84 compatibility
-- added preliminary R86Beta1 compatibility
+4.11
+- fix /fbcdebug chat command
+- bcx hotfix
+- correct version number for SDK
 `;
 
 /*
@@ -91,7 +90,7 @@ async function ForBetterClub() {
 	const SDK = w.bcModSdk.registerMod(
 		{
 			name: "FBC",
-			version: "1.0.0",
+			version: FBC_VERSION,
 			fullName: "For Better Club (formerly BCE)",
 			repository: "https://gitlab.com/Sidiousious/bce.git",
 		},
@@ -110,7 +109,7 @@ async function ForBetterClub() {
 	const BCX_DEVEL_SOURCE =
 			"https://jomshir98.github.io/bondage-club-extended/devel/bcx.js",
 		BCX_SOURCE =
-			"https://raw.githubusercontent.com/Jomshir98/bondage-club-extended/01c1a9f248c62b69d7d72f5bc7baf8e9b267efbe/bcx.js",
+			"https://raw.githubusercontent.com/Jomshir98/bondage-club-extended/bd6c355aac5faf49d84ce844cc092dbd4ec56bad/bcx.js",
 		BCX_LILIAN_SOURCE = "https://flameshare.azureedge.net/shared/bcx.js",
 		EBCH_SOURCE = "https://e2466.gitlab.io/ebch/master/EBCH.js";
 
@@ -1323,11 +1322,10 @@ async function ForBetterClub() {
 			deviatingHashes.includes(functionName) &&
 			SUPPORTED_GAME_VERSIONS.includes(GameVersion)
 		) {
-			logError(
-				`Skipping patching of ${functionName} due to detected deviation. Impact: ${affectedFunctionality}\n\nSee /fbcdebug in a chatroom for more information.`
+			logWarn(
+				`Attempted patching of ${functionName} despite detected deviation. Impact may be: ${affectedFunctionality}\n\nSee /fbcdebug in a chatroom for more information or copy(await fbcDebug()) in console.`
 			);
 			skippedFunctionality.push(affectedFunctionality);
-			return;
 		}
 		SDK.patchFunction(functionName, patches);
 	};
@@ -1600,6 +1598,7 @@ async function ForBetterClub() {
 	registerFunction(hideHiddenItemsIcon, "hideHiddenItemsIcon");
 	registerFunction(crafting, "crafting");
 	registerFunction(itemAntiCheat, "itemAntiCheat");
+	registerFunction(leashFix, "leashFix");
 	registerFunction(revampLilian, "revampLilian");
 
 	// Post ready when in a chat room
@@ -2110,7 +2109,7 @@ async function ForBetterClub() {
 				Description: displayText(
 					"Get debug information to share with developers."
 				),
-				Action: fbcDebug,
+				Action: () => fbcDebug(true),
 			},
 			{
 				Tag: "fbcchangelog",
@@ -2357,7 +2356,8 @@ async function ForBetterClub() {
 								c.Name.split(" ")[0].toLowerCase() === target?.toLowerCase()
 						);
 					}
-					if (!target || targetMembers.length === 0) {
+					targetMembers = targetMembers.filter((c) => c);
+					if (!target || !targetMembers || targetMembers.length === 0) {
 						fbcChatNotify(`Whisper target not found: ${target}`);
 					} else if (targetMembers.length > 1) {
 						fbcChatNotify(
@@ -5766,11 +5766,15 @@ async function ForBetterClub() {
 		};
 		const canAccessDifficultyMenu = () => {
 			const c = CharacterGetCurrent();
+			const item = c?.FocusGroup?.Name && InventoryGet(c, c.FocusGroup.Name);
+			const locked = item?.Property?.LockedBy;
+			const canUnlock = !locked || DialogCanUnlock(c, item);
 			return (
 				fbcSettings.layeringMenu &&
 				Player.CanInteract() &&
 				c?.FocusGroup?.Name &&
-				!InventoryGroupIsBlocked(c, c.FocusGroup.Name)
+				!InventoryGroupIsBlocked(c, c.FocusGroup.Name) &&
+				canUnlock
 			);
 		};
 
@@ -8170,6 +8174,17 @@ async function ForBetterClub() {
 		await patch;
 	}
 
+	function leashFix() {
+		patchFunction(
+			"ChatSearchQuery",
+			{
+				"// Prevent spam searching the same thing.":
+					'if (ChatRoomJoinLeash) { SearchData.Language = ""; }\n\t// Prevent spam searching the same thing.',
+			},
+			"Leashing between language filters"
+		);
+	}
+
 	// BcUtil-compatible instant messaging with friends
 	function instantMessenger() {
 		w.bceStripBeepMetadata = (msg) => msg.split("\uf124")[0].trimEnd();
@@ -9861,7 +9876,7 @@ async function ForBetterClub() {
 				const craft = JSON.parse(LZString.decompressFromBase64(str));
 				if (!isNonNullObject(craft)) {
 					logError(craft);
-					throw new Error("invalid craft type", typeof craft, craft);
+					throw new Error(`invalid craft type ${typeof craft} ${str}`);
 				}
 				for (const [key, value] of Object.entries(craft)) {
 					if (
