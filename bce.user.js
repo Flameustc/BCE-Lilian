@@ -39,7 +39,7 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const FBC_VERSION = "4.14-Lilian-20221218101800";
+const FBC_VERSION = "4.14-Lilian-20221218141600";
 const settingsVersion = 44;
 
 const fbcChangelog = `${FBC_VERSION}
@@ -6701,18 +6701,14 @@ async function ForBetterClub() {
 		);
 
 		SDK.hookFunction(
-			"InventoryItemNeckAccessoriesCollarAutoShockUnitDetectSpeech",
+			"PropertyAutoPunishParseMessage",
 			HOOK_PRIORITIES.ModifyBehaviourHigh,
+			/** @type {(args: [number, string, boolean], next: (args: [number, string, boolean]) => boolean) => boolean} */
 			(args, next) => {
-				const [Sensitivity, Emote, Keywords, LastMessages] = args;
-				if (!ChatRoomLastMessage || ChatRoomLastMessage.length == LastMessages
-						|| ChatRoomLastMessage[ChatRoomLastMessage.length - 1].startsWith("(")
-						|| ChatRoomLastMessage[ChatRoomLastMessage.length - 1].startsWith("（")
-						|| ChatRoomLastMessage[ChatRoomLastMessage.length - 1].startsWith("*")
-						|| ChatRoomLastMessage[ChatRoomLastMessage.length - 1].startsWith("/")) {
+				const [Sensitivity, msg, GagAction] = args;
+				if (msg.startsWith("(") || msg.startsWith("（") || msg.startsWith("/") || msg.startsWith("*")) {
 					return next(args);
 				}
-				const msg = ChatRoomLastMessage[ChatRoomLastMessage.length - 1];
 				if (Sensitivity == 3) {
 					// Same as BC default behavior
 				}
