@@ -39,7 +39,7 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const FBC_VERSION = "4.16-Lilian-20230116142200";
+const FBC_VERSION = "4.16-Lilian-20230210091100";
 const settingsVersion = 44;
 
 const fbcChangelog = `${FBC_VERSION}
@@ -6747,7 +6747,9 @@ async function ForBetterClub() {
 					return next(args);
 				}
 				if (Sensitivity == 3) {
-					// Same as BC default behavior
+					if (/[\p{L}\p{N}]/u.test(msg)) {
+						return true;
+					}
 				}
 				if (Sensitivity >= 2) {
 					if (BCX?.getRuleState("speech_doll_talk")?.inEffect) {
@@ -6776,7 +6778,7 @@ async function ForBetterClub() {
 						}
 					}
 				}
-				return next(args);
+				return false;	// override default behavior
 			}
 		);
 
@@ -10111,8 +10113,9 @@ async function ForBetterClub() {
 						var msg = "TriggerShock" + (intensity - 1);
 						var Dictionary = [];
 						Dictionary.push({ Tag: "DestinationCharacterName", Text: CharacterNickname(C), MemberNumber: C.MemberNumber });
-						Dictionary.push({ Tag: "AssetName", AssetName: item.Asset.Name});
+						Dictionary.push({ Tag: "AssetName", AssetName: item.Asset.Name, GroupName: item.Asset.Group.Name});
 						Dictionary.push({ ShockIntensity : intensity});
+						Dictionary.push({ FocusGroupName: item.Asset.Group.Name})
 						Dictionary.push({ Automatic: true });
 						ServerSend("ChatRoomChat", { Content: msg, Type: "Action", Dictionary });
 						totalIntensity -= intensity;
