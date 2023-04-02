@@ -107,7 +107,7 @@ async function ForBetterClub() {
 			"https://jomshir98.github.io/bondage-club-extended/devel/bcx.js",
 		BCX_SOURCE =
 			"https://raw.githubusercontent.com/Jomshir98/bondage-club-extended/b547db6453768f2c038ee51b5c1039780203cfc1/bcx.js",
-		BCX_LILIAN_SOURCE = "https://flameshare.azureedge.net/shared/bcx.js",
+		BCX_LILIAN_SOURCE = "https://flameustc.github.io/BCX-Lilian/bcx.js",
 		EBCH_SOURCE = "https://e2466.gitlab.io/ebch/master/EBCH.js",
 		MBS_SOURCE = "https://bananarama92.github.io/MBS/main/mbs.js";
 
