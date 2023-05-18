@@ -103,6 +103,7 @@ declare global {
   var LZString: LZStringType;
   var ElementIsScrolledToEnd: (element: string) => boolean;
   var ElementScrollToEnd: (element: string) => void;
+  var RelogChatLog: HTMLDivElement | null;
   var ServerBeep: ServerBeep;
   var ServerSend: (event: string, data: unknown) => void;
   var GameVersion: string;
@@ -442,6 +443,7 @@ declare global {
   var CharacterCompressWardrobe: (wardrobe: ItemBundle[][]) => string;
   var CharacterAppearanceWardrobeOffset: number;
   var MainRun: (time: DOMHighResTimeStamp) => void;
+  var GameRun: (time: DOMHighResTimeStamp) => void;
   var NotificationRaise: (
     eventType: "Beep",
     data: Record<string, unknown>
@@ -545,6 +547,7 @@ declare global {
   };
   interface Character {
     ArousalSettings: ArousalSettings;
+    Inventory: unknown;
     OnlineSettings: OnlineSettings;
     OnlineSharedSettings: OnlineSharedSettings;
     MemberNumber: number;
@@ -555,6 +558,7 @@ declare global {
     AccountName: string;
     Creation: number;
     Appearance: Item[];
+    AssetFamily: "Female3DCG";
     AppearanceLayers: ItemLayer[];
     Wardrobe: ItemBundle[][];
     FocusGroup: AssetGroup;
@@ -635,7 +639,7 @@ declare global {
     ShowTimer?: boolean;
     Intensity?: number;
     Expression?: string;
-    OverridePriority?: number;
+    OverridePriority?: number | Record<string, number>;
     LockMemberNumber?: number;
     LockedBy?: string;
     Effect?: string[];
@@ -660,8 +664,14 @@ declare global {
     MaxTimer?: number;
     AllowEffect?: string[];
     AllowLock?: boolean;
+    Layer: AssetLayer[];
+    Priority?: number;
   };
-  type ItemLayer = Item & { Priority?: number };
+  type AssetLayer = {
+    Name: string | null;
+    Priority?: number | null;
+  };
+  type ItemLayer = Item & { Name: string | null; Priority?: number };
   type Item = {
     Asset: Asset;
     Difficulty?: number;
