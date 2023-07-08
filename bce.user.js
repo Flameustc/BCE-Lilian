@@ -1,7 +1,8 @@
+/* eslint-disable no-inline-comments */
 // ==UserScript==
 // @name Bondage Club Enhancements
 // @namespace https://www.bondageprojects.com/
-// @version 4.30
+// @version 4.36
 // @description FBC - For Better Club - enhancements for the bondage club - old name kept in tampermonkey for compatibility
 // @author Sidious
 // @match https://bondageprojects.elementfx.com/*
@@ -15,11 +16,9 @@
 // ==/UserScript==
 // @ts-check
 // eslint-disable-next-line
+/// <reference path="./node_modules/@total-typescript/ts-reset/dist/recommended.d.ts"/>
+// eslint-disable-next-line
 /// <reference path="./bce.d.ts" />
-/* eslint-disable @typescript-eslint/no-floating-promises */
-/* eslint-disable no-undef */
-/* eslint-disable no-implicit-globals */
-/* eslint-disable no-alert */
 
 /**
  *     BCE/FBC
@@ -39,21 +38,20 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const FBC_VERSION = "4.30-Lilian-20230518224300";
-const settingsVersion = 46;
+const FBC_VERSION = "4.36-Lilian-20230708104700";
+const settingsVersion = 48;
 
 const fbcChangelog = `${FBC_VERSION}
-- R92 compatibility
-  - Goggles considered glasses for blind without glasses
-- added new option to print friend presence notifications in chat
-- added advanced layering menu
-- massively reduced the amount of data saved in the profile cache
+- added LSCG loading under other addons
+- R93 Beta 1 support
+- removed difficulty adjustment as it is now in the game
+- added developer API window.fbcPushEvent to allow other mods to send expression/posing events to FBC animation engine
 
-4.29
-- added new option (enabled by default) to unlock all expiring locks on the same second
+4.35
+- updated stable bcx
 
-4.28
-- added small patch to scroll chat to end after relogs
+4.34
+- added option to share installed mods with other FBC users (enabled by default, disable in FBC settings -> other addons)
 `;
 
 /*
@@ -70,8 +68,8 @@ var bcModSdk=function(){"use strict";const e="1.1.0";function o(e){alert("Mod ER
 async function ForBetterClub() {
 	"use strict";
 
-	const SUPPORTED_GAME_VERSIONS = ["R92"];
-	const CAPABILITIES = ["clubslave"];
+	const SUPPORTED_GAME_VERSIONS = ["R92", "R93Beta1"];
+	const CAPABILITIES = /** @type {const} */ (["clubslave"]);
 
 	const w = window;
 
@@ -106,10 +104,10 @@ async function ForBetterClub() {
 
 	const BCX_DEVEL_SOURCE =
 			"https://jomshir98.github.io/bondage-club-extended/devel/bcx.js",
-		BCX_SOURCE =
-			"https://raw.githubusercontent.com/Jomshir98/bondage-club-extended/b547db6453768f2c038ee51b5c1039780203cfc1/bcx.js",
+		BCX_SOURCE = "https://jomshir98.github.io/bondage-club-extended/bcx.js",
 		BCX_LILIAN_SOURCE = "https://flameustc.github.io/BCX-Lilian/bcx.js",
 		EBCH_SOURCE = "https://e2466.gitlab.io/ebch/master/EBCH.js",
+		LSCG_SOURCE = "https://littlesera.github.io/LSCG/bundle.js",
 		MBS_SOURCE = "https://bananarama92.github.io/MBS/main/mbs.js";
 
 	const BCE_COLOR_ADJUSTMENTS_CLASS_NAME = "bce-colors",
@@ -136,18 +134,17 @@ async function ForBetterClub() {
 		TIMER_INPUT_ID = "bce_timerInput",
 		WHISPER_CLASS = "bce-whisper-input";
 
-	const EMBED_TYPE = Object.freeze({
-		/** @type {"img"} */
+	const EMBED_TYPE = /** @type {const} */ ({
 		Image: "img",
-		/** @type {""} */
 		None: "",
 	});
 
-	/** @type {Record<string, "none" | "external" | "stable" | "devel">} */
+	/** @type {Record<"BCX" | "EBCH" | "MBS" | "LSCG", "none" | "external" | "stable" | "devel">} */
 	const addonTypes = {
 		BCX: "none",
 		EBCH: "none",
 		MBS: "none",
+		LSCG: "none",
 	};
 
 	if (typeof ChatRoomCharacter === "undefined") {
@@ -178,14 +175,12 @@ async function ForBetterClub() {
 	};
 
 	/**
-	 * @type {Settings}
+	 * @type {Record<keyof defaultSettings, string | boolean> & {version?: number}}
 	 */
+	// @ts-ignore -- this is fully initialized in loadSettings
 	let fbcSettings = {};
 
-	/**
-	 * @type {Readonly<DefaultSettings>}
-	 */
-	const defaultSettings = {
+	const defaultSettings = /** @type {const} */ ({
 		animationEngine: {
 			label: "Animation Engine",
 			sideEffects: (newValue) => {
@@ -443,20 +438,6 @@ async function ForBetterClub() {
 			description:
 				"Allows you to open menus while bound, even if they're disabled in the settings.",
 		},
-		modifyDifficulty: {
-			label: "Add option to modify difficulty of restraints to layering menu",
-			value: false,
-			sideEffects: (newValue) => {
-				debug("modifyDifficulty", newValue);
-				if (newValue && !fbcSettings.layeringMenu) {
-					fbcSettings.layeringMenu = true;
-					defaultSettings.layeringMenu.sideEffects(true);
-				}
-			},
-			category: "cheats",
-			description:
-				"Adds an option to the layering menu to modify the difficulty of restraints.",
-		},
 		autoStruggle: {
 			label: "(X) Make automatic progress while struggling",
 			value: false,
@@ -483,8 +464,18 @@ async function ForBetterClub() {
 			description:
 				"This setting is temporary until BCX supports a focus mode rule.",
 		},
+		shareAddons: {
+			label: "Share Addons",
+			value: true,
+			sideEffects: (newValue) => {
+				debug("shareAddons", newValue);
+			},
+			category: "addons",
+			description:
+				"Share a list of your installed addons with other FBC users in the room, visible via /versions chat command.",
+		},
 		bcx: {
-			label: "Load BCX by Jomshir98 (no auto-update)",
+			label: "Load BCX by Jomshir98",
 			value: false,
 			sideEffects: (newValue) => {
 				if (newValue) {
@@ -501,10 +492,10 @@ async function ForBetterClub() {
 			},
 			category: "addons",
 			description:
-				"Load Bondage Club Extended. To see all details, see the link in sidiousious.gitlab.io/bce. This option keeps the loaded BCX code from changing until FBC update.",
+				"Load Bondage Club Extended. To see all details, see the link in sidiousious.gitlab.io/bce. This option always loads the latest version, which may change between refreshes.",
 		},
 		bcxDevel: {
-			label: "Load BCX beta (auto-updates)",
+			label: "Load BCX beta",
 			value: false,
 			sideEffects: (newValue) => {
 				if (newValue) {
@@ -544,7 +535,7 @@ async function ForBetterClub() {
 			"Load the Lilian version of BCX.",
 		},
 		ebch: {
-			label: "Load EBCH by Elicia (auto-updates)",
+			label: "Load EBCH by Elicia",
 			value: false,
 			sideEffects: (newValue) => {
 				if (newValue) {
@@ -561,7 +552,7 @@ async function ForBetterClub() {
 				"Load the latest stable version of EBCH. To see all details, see the link in sidiousious.gitlab.io/bce. This option always loads the latest version, which may change between refreshes.",
 		},
 		mbs: {
-			label: "Load MBS by Rama (auto-updates)",
+			label: "Load MBS by Rama",
 			value: false,
 			sideEffects: (newValue) => {
 				if (newValue) {
@@ -575,6 +566,22 @@ async function ForBetterClub() {
 			category: "addons",
 			description:
 				"Load the latest stable version of MBS. To see all details, see the link in sidiousious.gitlab.io/bce. This option always loads the latest version, which may change between refreshes.",
+		},
+		lscg: {
+			label: "Load LSCG by LittleSera",
+			value: false,
+			sideEffects: (newValue) => {
+				if (newValue) {
+					loadExternalAddon("LSCG", LSCG_SOURCE).then((success) => {
+						if (success) {
+							addonTypes.LSCG = "stable";
+						}
+					});
+				}
+			},
+			category: "addons",
+			description:
+				"Load the latest stable version of LSCG. To see all details, see the link in sidiousious.gitlab.io/bce. This option always loads the latest version, which may change between refreshes.",
 		},
 		toySync: {
 			label: "Enable buttplug.io (requires refresh)",
@@ -882,9 +889,7 @@ async function ForBetterClub() {
 					if (!isString(newValue)) {
 						throw new Error("expected string for buttplugDevices");
 					}
-					/** @type {ToySetting[]} */
-					// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-					const devices = JSON.parse(newValue);
+					const devices = /** @type {ToySetting[]} */ (JSON.parse(newValue));
 					if (!Array.isArray(devices)) {
 						throw new Error("expected array for devices");
 					}
@@ -898,7 +903,7 @@ async function ForBetterClub() {
 			category: "hidden",
 			description: "",
 		},
-	};
+	});
 
 	/** @type {SocketEventListenerRegister} */
 	const listeners = [];
@@ -932,21 +937,20 @@ async function ForBetterClub() {
 	const bceSettingKey = () => `bce.settings.${Player?.AccountName}`;
 
 	/**
-	 * @type {() => Promise<Settings>}
+	 * @type {() => Promise<typeof fbcSettings>}
 	 */
 	const bceLoadSettings = async () => {
 		await waitFor(() => !!Player?.AccountName);
 		const key = bceSettingKey();
 		debug("loading settings");
 		if (!settingsLoaded()) {
-			/** @type {Settings} */
-			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-			let settings = JSON.parse(localStorage.getItem(key));
-
-			/** @type {Settings} */
-			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-			const onlineSettings = JSON.parse(
-				LZString.decompressFromBase64(Player.OnlineSettings.BCE) || null
+			let settings = /** @type {typeof fbcSettings} */ (
+				JSON.parse(localStorage.getItem(key))
+			);
+			const onlineSettings = /** @type {typeof fbcSettings} */ (
+				JSON.parse(
+					LZString.decompressFromBase64(Player.OnlineSettings.BCE) || null
+				)
 			);
 			if (
 				onlineSettings?.version >= settings?.version ||
@@ -957,13 +961,13 @@ async function ForBetterClub() {
 			}
 			if (!settings) {
 				debug("no settings", key);
+				// @ts-ignore -- this is fully populated in the loop below
 				settings = {};
 			}
 
-			for (const setting in defaultSettings) {
-				if (!Object.prototype.hasOwnProperty.call(defaultSettings, setting)) {
-					continue;
-				}
+			for (const setting of /** @type {(keyof defaultSettings)[]} */ (
+				Object.keys(defaultSettings)
+			)) {
 				if (!(setting in settings)) {
 					if (setting === "activityExpressions" && "expressions" in settings) {
 						settings[setting] = settings.expressions;
@@ -1000,11 +1004,18 @@ async function ForBetterClub() {
 		});
 	};
 
+	/**
+	 * @param {string} key
+	 * @returns {key is keyof typeof defaultSettings}
+	 */
+	function isDefaultSettingKey(key) {
+		return key in defaultSettings;
+	}
+
 	function postSettings() {
 		debug("handling settings side effects");
 		for (const [k, v] of Object.entries(fbcSettings)) {
-			if (k in defaultSettings) {
-				// @ts-ignore
+			if (isDefaultSettingKey(k)) {
 				defaultSettings[k].sideEffects(v);
 			}
 		}
@@ -1149,147 +1160,277 @@ async function ForBetterClub() {
 	 * @type {(gameVersion: string) => Readonly<{ [key: string]: string }>}
 	 */
 	const expectedHashes = (gameVersion) => {
-		const hashes = {
-			ActivityChatRoomArousalSync: "21318CAF",
-			ActivitySetArousal: "3AE28123",
-			ActivitySetArousalTimer: "1342AFE2",
-			ActivityTimerProgress: "6CD388A7",
-			AppearanceClick: "64C82387",
-			AppearanceExit: "AA300341",
-			AppearanceLoad: "A14CB302",
-			AppearanceRun: "8C0005E2",
-			CharacterAppearanceWardrobeLoad: "A5B63A03",
-			CharacterBuildDialog: "918170E7",
-			CharacterCompressWardrobe: "8D3B1AB1",
-			CharacterDecompressWardrobe: "A9FD29CC",
-			CharacterDelete: "398D1116",
-			CharacterGetCurrent: "45608177",
-			CharacterLoadCanvas: "BA6AD4FF",
-			CharacterNickname: "EB452E5E",
-			CharacterRefresh: "5BF9DA5A",
-			CharacterReleaseTotal: "396640D1",
-			CharacterSetActivePose: "5BCD2A9E",
-			CharacterSetCurrent: "FD267B9B",
-			CharacterSetFacialExpression: "C794A455",
-			ChatRoomCharacterItemUpdate: "041F9B91",
-			ChatRoomCharacterUpdate: "9D0EEA39",
-			ChatRoomClearAllElements: "C49AA2C1",
-			ChatRoomClick: "79E651EB",
-			ChatRoomCreateElement: "AD7CBE68",
-			ChatRoomCurrentTime: "A462DD3A",
-			ChatRoomDrawBackground: "597B062C",
-			ChatRoomDrawCharacterOverlay: "06FB4CC3",
-			ChatRoomHTMLEntities: "0A7ADB1D",
-			ChatRoomKeyDown: "B4BFDB0C",
-			ChatRoomListManipulation: "75D28A8B",
-			ChatRoomMessage: "BBD61334",
-			ChatRoomMessageDisplay: "F20D1969",
-			ChatRoomRegisterMessageHandler: "C432923A",
-			ChatRoomResize: "9D52CF52",
-			ChatRoomRun: "7D2E2D71",
-			ChatRoomSendChat: "7F540ED0",
-			ChatRoomStart: "9B822A9A",
-			CommandExecute: "5C948CC3",
-			CommandParse: "6E46F29E",
-			CommonClick: "1F6DF7CB",
-			CommonColorIsValid: "390A2CE4",
-			CommonSetScreen: "E2AC00F4",
-			CraftingClick: "9CB5E895",
-			CraftingConvertSelectedToItem: "46CE5BE0",
-			CraftingRun: "89AE0867",
-			DialogClick: "F4FCD7DD",
-			DialogDraw: "2491ABC6",
-			DialogDrawItemMenu: "689891E5",
-			DialogLeave: "04AF5C20",
-			DrawAssetPreview: "5BD59B42",
-			DrawBackNextButton: "9AF4BA37",
-			DrawButton: "A7023A82",
-			DrawCharacter: "CA0D50AF",
-			DrawCheckbox: "00FD87EB",
-			DrawImageEx: "3D3D74F5",
-			DrawImageResize: "8CF55F04",
-			DrawProcess: "E60F65B5",
-			DrawText: "C1BF0F50",
-			DrawTextFit: "F9A1B11E",
-			ElementCreateInput: "562F83D4",
-			ElementCreateTextArea: "8721B388",
-			ElementIsScrolledToEnd: "1CC4FE11",
-			ElementPosition: "CC4E3C82",
-			ElementRemove: "60809E60",
-			ElementScrollToEnd: "1AC45575",
-			ElementValue: "4F26C62F",
-			FriendListShowBeep: "6C0449BB",
-			GameRun: "3525631A",
-			GLDrawResetCanvas: "81214642",
-			InformationSheetRun: "E248ADC7",
-			InventoryGet: "E666F671",
-			InventoryItemMiscLoversTimerPadlockClick: "60FBC451",
-			InventoryItemMiscLoversTimerPadlockDraw: "C98C2F44",
-			InventoryItemMiscLoversTimerPadlockExit: "17D63035",
-			InventoryItemMiscLoversTimerPadlockLoad: "4993D2EB",
-			InventoryItemMiscMistressTimerPadlockClick: "387EC3A9",
-			InventoryItemMiscMistressTimerPadlockDraw: "ACE7F21E",
-			InventoryItemMiscMistressTimerPadlockExit: "39BD2B10",
-			InventoryItemMiscMistressTimerPadlockLoad: "BE46432F",
-			InventoryItemMiscOwnerTimerPadlockClick: "166CAFDB",
-			InventoryItemMiscOwnerTimerPadlockDraw: "029485ED",
-			InventoryItemMiscOwnerTimerPadlockExit: "431B3DEC",
-			InventoryItemMiscOwnerTimerPadlockLoad: "8A55C0D1",
-			InventoryItemMiscTimerPasswordPadlockClick: "CB736461",
-			InventoryItemMiscTimerPasswordPadlockDraw: "953C9EF8",
-			InventoryItemMiscTimerPasswordPadlockExit: "7323E56D",
-			InventoryItemMiscTimerPasswordPadlockLoad: "82223608",
-			LoginClick: "EE94BEC7",
-			LoginRun: "C3926C4F",
-			LoginSetSubmitted: "C88F4A8E",
-			MouseIn: "CA8B839E",
-			NotificationDrawFavicon: "AB88656B",
-			NotificationRaise: "E8F29646",
-			NotificationTitleUpdate: "0E92F3ED",
-			OnlineGameAllowChange: "3779F42C",
-			OnlineProfileClick: "CC034993",
-			OnlineProfileRun: "B0AF608D",
-			RelogRun: "10AF5A60",
-			RelogExit: "2DFB2DAD",
-			ServerAccountBeep: "F16771D4",
-			ServerAppearanceBundle: "4D069622",
-			ServerAppearanceLoadFromBundle: "FB794E30",
-			ServerClickBeep: "3E6277BE",
-			ServerConnect: "845E50A6",
-			ServerDisconnect: "06C1A6B0",
-			ServerInit: "FEC6457F",
-			ServerOpenFriendList: "FA8D3CDE",
-			ServerSend: "90A61F57",
-			SkillGetWithRatio: "16620445",
-			SpeechGarble: "9D669F73",
-			SpeechGarbleByGagLevel: "5F6E16C8",
-			SpeechGetTotalGagLevel: "C55B705A",
-			StruggleDexterityProcess: "7E19ADA9",
-			StruggleFlexibilityCheck: "727CE05B",
-			StruggleFlexibilityProcess: "278D7285",
-			StruggleLockPickDraw: "2F1F603B",
-			StruggleMinigameHandleExpression: "41FA76AC",
-			StruggleStrengthProcess: "D20CF698",
-			TextGet: "4DDE5794",
-			TextLoad: "ADF7C890",
-			TimerInventoryRemove: "226C417C",
-			TimerProcess: "52458C63",
-			TitleExit: "F13F533C",
-			WardrobeClick: "E96F7F63",
-			WardrobeExit: "EE83FF29",
-			WardrobeFastLoad: "38627DC2",
-			WardrobeFastSave: "B62385C1",
-			WardrobeFixLength: "CA3334C6",
-			WardrobeLoad: "C343A4C7",
-			WardrobeRun: "9616EB3A",
-		};
-
 		switch (gameVersion) {
+			case "R93Beta1":
+			case "R93Beta2":
+			case "R93Beta3":
+			case "R93":
+				return /** @type {const} */ ({
+					ActivityChatRoomArousalSync: "21318CAF",
+					ActivitySetArousal: "3AE28123",
+					ActivitySetArousalTimer: "1342AFE2",
+					ActivityTimerProgress: "6CD388A7",
+					AppearanceClick: "17FD3A23",
+					AppearanceExit: "AA300341",
+					AppearanceLoad: "4360C485",
+					AppearanceRun: "0BBDEE59",
+					CharacterAppearanceWardrobeLoad: "A5B63A03",
+					CharacterBuildDialog: "918170E7",
+					CharacterCompressWardrobe: "8D3B1AB1",
+					CharacterDecompressWardrobe: "A9FD29CC",
+					CharacterDelete: "398D1116",
+					CharacterGetCurrent: "45608177",
+					CharacterLoadCanvas: "BA6AD4FF",
+					CharacterNickname: "A794EFF5",
+					CharacterRefresh: "5BF9DA5A",
+					CharacterReleaseTotal: "396640D1",
+					CharacterSetActivePose: "5BCD2A9E",
+					CharacterSetCurrent: "FD267B9B",
+					CharacterSetFacialExpression: "C794A455",
+					ChatRoomCharacterItemUpdate: "041F9B91",
+					ChatRoomCharacterUpdate: "9D0EEA39",
+					ChatRoomClearAllElements: "C49AA2C1",
+					ChatRoomClick: "79E651EB",
+					ChatRoomCreateElement: "AD7CBE68",
+					ChatRoomCurrentTime: "A462DD3A",
+					ChatRoomDrawBackground: "597B062C",
+					ChatRoomDrawCharacterOverlay: "06FB4CC3",
+					ChatRoomHTMLEntities: "0A7ADB1D",
+					ChatRoomKeyDown: "B4BFDB0C",
+					ChatRoomListManipulation: "75D28A8B",
+					ChatRoomMessage: "BBD61334",
+					ChatRoomMessageDisplay: "F20D1969",
+					ChatRoomRegisterMessageHandler: "C432923A",
+					ChatRoomResize: "9D52CF52",
+					ChatRoomRun: "7D2E2D71",
+					ChatRoomSendChat: "7F540ED0",
+					ChatRoomStart: "9B822A9A",
+					CommandExecute: "5C948CC3",
+					CommandParse: "6E46F29E",
+					CommonClick: "1F6DF7CB",
+					CommonColorIsValid: "390A2CE4",
+					CommonSetScreen: "E2AC00F4",
+					CraftingClick: "9CB5E895",
+					CraftingConvertSelectedToItem: "46CE5BE0",
+					CraftingRun: "55F21AB3",
+					DialogClick: "8B003F46",
+					DialogDraw: "BFB557E2",
+					DialogDrawItemMenu: "F68E259E",
+					DialogLeave: "D269CC33",
+					DrawBackNextButton: "9AF4BA37",
+					DrawButton: "A7023A82",
+					DrawCharacter: "B54922F5",
+					DrawCheckbox: "00FD87EB",
+					DrawImageEx: "3D3D74F5",
+					DrawImageResize: "8CF55F04",
+					DrawItemPreview: "A27E9228",
+					DrawProcess: "E60F65B5",
+					DrawText: "C1BF0F50",
+					DrawTextFit: "F9A1B11E",
+					ElementCreateInput: "562F83D4",
+					ElementCreateTextArea: "8721B388",
+					ElementIsScrolledToEnd: "1CC4FE11",
+					ElementPosition: "CC4E3C82",
+					ElementRemove: "60809E60",
+					ElementScrollToEnd: "1AC45575",
+					ElementValue: "4F26C62F",
+					FriendListShowBeep: "6C0449BB",
+					GameRun: "3525631A",
+					GLDrawResetCanvas: "81214642",
+					InformationSheetRun: "E248ADC7",
+					InventoryGet: "E666F671",
+					InventoryItemMiscMistressTimerPadlockClick: "861419FC",
+					InventoryItemMiscMistressTimerPadlockDraw: "4E1628BE",
+					InventoryItemMiscMistressTimerPadlockExit: "66BC6923",
+					InventoryItemMiscMistressTimerPadlockLoad: "BE46432F",
+					InventoryItemMiscOwnerTimerPadlockClick: "C929699B",
+					InventoryItemMiscOwnerTimerPadlockDraw: "EF26F8D5",
+					InventoryItemMiscOwnerTimerPadlockExit: "1BE66B4A",
+					InventoryItemMiscOwnerTimerPadlockLoad: "8A55C0D1",
+					InventoryItemMiscTimerPasswordPadlockClick: "BAE0BAC9",
+					InventoryItemMiscTimerPasswordPadlockDraw: "0BB8E88D",
+					InventoryItemMiscTimerPasswordPadlockExit: "7323E56D",
+					InventoryItemMiscTimerPasswordPadlockLoad: "82223608",
+					LoginClick: "EE94BEC7",
+					LoginRun: "C3926C4F",
+					LoginSetSubmitted: "C88F4A8E",
+					MouseIn: "CA8B839E",
+					NotificationDrawFavicon: "AB88656B",
+					NotificationRaise: "E8F29646",
+					NotificationTitleUpdate: "0E92F3ED",
+					OnlineGameAllowChange: "3779F42C",
+					OnlineProfileClick: "CC034993",
+					OnlineProfileRun: "B0AF608D",
+					RelogRun: "10AF5A60",
+					RelogExit: "2DFB2DAD",
+					ServerAccountBeep: "F16771D4",
+					ServerAppearanceBundle: "4D069622",
+					ServerAppearanceLoadFromBundle: "FB794E30",
+					ServerClickBeep: "3E6277BE",
+					ServerConnect: "845E50A6",
+					ServerDisconnect: "06C1A6B0",
+					ServerInit: "FEC6457F",
+					ServerOpenFriendList: "FA8D3CDE",
+					ServerSend: "90A61F57",
+					SkillGetWithRatio: "16620445",
+					SpeechGarble: "9D669F73",
+					SpeechGarbleByGagLevel: "5F6E16C8",
+					SpeechGetTotalGagLevel: "C55B705A",
+					StruggleDexterityProcess: "7E19ADA9",
+					StruggleFlexibilityCheck: "727CE05B",
+					StruggleFlexibilityProcess: "278D7285",
+					StruggleLockPickDraw: "2F1F603B",
+					StruggleMinigameHandleExpression: "41FA76AC",
+					StruggleStrengthProcess: "D20CF698",
+					TextGet: "4DDE5794",
+					TextLoad: "ADF7C890",
+					TimerInventoryRemove: "226C417C",
+					TimerProcess: "52458C63",
+					TitleExit: "F13F533C",
+					WardrobeClick: "E96F7F63",
+					WardrobeExit: "EE83FF29",
+					WardrobeFastLoad: "38627DC2",
+					WardrobeFastSave: "B62385C1",
+					WardrobeFixLength: "CA3334C6",
+					WardrobeLoad: "C343A4C7",
+					WardrobeRun: "9616EB3A",
+				});
 			default:
-				break;
+				return /** @type {const} */ ({
+					ActivityChatRoomArousalSync: "21318CAF",
+					ActivitySetArousal: "3AE28123",
+					ActivitySetArousalTimer: "1342AFE2",
+					ActivityTimerProgress: "6CD388A7",
+					AppearanceClick: "64C82387",
+					AppearanceExit: "AA300341",
+					AppearanceLoad: "A14CB302",
+					AppearanceRun: "8C0005E2",
+					CharacterAppearanceWardrobeLoad: "A5B63A03",
+					CharacterBuildDialog: "918170E7",
+					CharacterCompressWardrobe: "8D3B1AB1",
+					CharacterDecompressWardrobe: "A9FD29CC",
+					CharacterDelete: "398D1116",
+					CharacterGetCurrent: "45608177",
+					CharacterLoadCanvas: "BA6AD4FF",
+					CharacterNickname: "EB452E5E",
+					CharacterRefresh: "5BF9DA5A",
+					CharacterReleaseTotal: "396640D1",
+					CharacterSetActivePose: "5BCD2A9E",
+					CharacterSetCurrent: "FD267B9B",
+					CharacterSetFacialExpression: "C794A455",
+					ChatRoomCharacterItemUpdate: "041F9B91",
+					ChatRoomCharacterUpdate: "9D0EEA39",
+					ChatRoomClearAllElements: "C49AA2C1",
+					ChatRoomClick: "79E651EB",
+					ChatRoomCreateElement: "AD7CBE68",
+					ChatRoomCurrentTime: "A462DD3A",
+					ChatRoomDrawBackground: "597B062C",
+					ChatRoomDrawCharacterOverlay: "06FB4CC3",
+					ChatRoomHTMLEntities: "0A7ADB1D",
+					ChatRoomKeyDown: "B4BFDB0C",
+					ChatRoomListManipulation: "75D28A8B",
+					ChatRoomMessage: "BBD61334",
+					ChatRoomMessageDisplay: "F20D1969",
+					ChatRoomRegisterMessageHandler: "C432923A",
+					ChatRoomResize: "9D52CF52",
+					ChatRoomRun: "7D2E2D71",
+					ChatRoomSendChat: "7F540ED0",
+					ChatRoomStart: "9B822A9A",
+					CommandExecute: "5C948CC3",
+					CommandParse: "6E46F29E",
+					CommonClick: "1F6DF7CB",
+					CommonColorIsValid: "390A2CE4",
+					CommonSetScreen: "E2AC00F4",
+					CraftingClick: "9CB5E895",
+					CraftingConvertSelectedToItem: "46CE5BE0",
+					CraftingRun: "89AE0867",
+					DialogClick: "F4FCD7DD",
+					DialogDraw: "2491ABC6",
+					DialogDrawItemMenu: "689891E5",
+					DialogLeave: "04AF5C20",
+					DrawAssetPreview: "5BD59B42",
+					DrawBackNextButton: "9AF4BA37",
+					DrawButton: "A7023A82",
+					DrawCharacter: "CA0D50AF",
+					DrawCheckbox: "00FD87EB",
+					DrawImageEx: "3D3D74F5",
+					DrawImageResize: "8CF55F04",
+					DrawProcess: "E60F65B5",
+					DrawText: "C1BF0F50",
+					DrawTextFit: "F9A1B11E",
+					ElementCreateInput: "562F83D4",
+					ElementCreateTextArea: "8721B388",
+					ElementIsScrolledToEnd: "1CC4FE11",
+					ElementPosition: "CC4E3C82",
+					ElementRemove: "60809E60",
+					ElementScrollToEnd: "1AC45575",
+					ElementValue: "4F26C62F",
+					FriendListShowBeep: "6C0449BB",
+					GameRun: "3525631A",
+					GLDrawResetCanvas: "81214642",
+					InformationSheetRun: "E248ADC7",
+					InventoryGet: "E666F671",
+					InventoryItemMiscLoversTimerPadlockClick: "60FBC451",
+					InventoryItemMiscLoversTimerPadlockDraw: "C98C2F44",
+					InventoryItemMiscLoversTimerPadlockExit: "17D63035",
+					InventoryItemMiscLoversTimerPadlockLoad: "4993D2EB",
+					InventoryItemMiscMistressTimerPadlockClick: "387EC3A9",
+					InventoryItemMiscMistressTimerPadlockDraw: "ACE7F21E",
+					InventoryItemMiscMistressTimerPadlockExit: "39BD2B10",
+					InventoryItemMiscMistressTimerPadlockLoad: "BE46432F",
+					InventoryItemMiscOwnerTimerPadlockClick: "166CAFDB",
+					InventoryItemMiscOwnerTimerPadlockDraw: "029485ED",
+					InventoryItemMiscOwnerTimerPadlockExit: "431B3DEC",
+					InventoryItemMiscOwnerTimerPadlockLoad: "8A55C0D1",
+					InventoryItemMiscTimerPasswordPadlockClick: "CB736461",
+					InventoryItemMiscTimerPasswordPadlockDraw: "953C9EF8",
+					InventoryItemMiscTimerPasswordPadlockExit: "7323E56D",
+					InventoryItemMiscTimerPasswordPadlockLoad: "82223608",
+					LoginClick: "EE94BEC7",
+					LoginRun: "C3926C4F",
+					LoginSetSubmitted: "C88F4A8E",
+					MouseIn: "CA8B839E",
+					NotificationDrawFavicon: "AB88656B",
+					NotificationRaise: "E8F29646",
+					NotificationTitleUpdate: "0E92F3ED",
+					OnlineGameAllowChange: "3779F42C",
+					OnlineProfileClick: "CC034993",
+					OnlineProfileRun: "B0AF608D",
+					RelogRun: "10AF5A60",
+					RelogExit: "2DFB2DAD",
+					ServerAccountBeep: "F16771D4",
+					ServerAppearanceBundle: "4D069622",
+					ServerAppearanceLoadFromBundle: "FB794E30",
+					ServerClickBeep: "3E6277BE",
+					ServerConnect: "845E50A6",
+					ServerDisconnect: "06C1A6B0",
+					ServerInit: "FEC6457F",
+					ServerOpenFriendList: "FA8D3CDE",
+					ServerSend: "90A61F57",
+					SkillGetWithRatio: "16620445",
+					SpeechGarble: "9D669F73",
+					SpeechGarbleByGagLevel: "5F6E16C8",
+					SpeechGetTotalGagLevel: "C55B705A",
+					StruggleDexterityProcess: "7E19ADA9",
+					StruggleFlexibilityCheck: "727CE05B",
+					StruggleFlexibilityProcess: "278D7285",
+					StruggleLockPickDraw: "2F1F603B",
+					StruggleMinigameHandleExpression: "41FA76AC",
+					StruggleStrengthProcess: "D20CF698",
+					TextGet: "4DDE5794",
+					TextLoad: "ADF7C890",
+					TimerInventoryRemove: "226C417C",
+					TimerProcess: "52458C63",
+					TitleExit: "F13F533C",
+					WardrobeClick: "E96F7F63",
+					WardrobeExit: "EE83FF29",
+					WardrobeFastLoad: "38627DC2",
+					WardrobeFastSave: "B62385C1",
+					WardrobeFixLength: "CA3334C6",
+					WardrobeLoad: "C343A4C7",
+					WardrobeRun: "9616EB3A",
+				});
 		}
-
-		return Object.freeze(hashes);
 	};
 
 	/** @type {(level: "error" | "warn" | "info" | "debug", ...args: unknown[]) => void} */
@@ -1442,8 +1583,12 @@ async function ForBetterClub() {
 	w.bceSendAction = fbcSendAction;
 
 	w.bceSettingValue = (key) => fbcSettingValue(key);
-	w.fbcSettingValue = (key) =>
-		key in fbcSettings ? fbcSettings[key] : defaultSettings[key].value;
+	w.fbcSettingValue = (key) => {
+		if (isDefaultSettingKey(key)) {
+			return fbcSettings[key];
+		}
+		return false;
+	};
 
 	w.bceAnimationEngineEnabled = () => !!fbcSettings.animationEngine;
 
@@ -1753,13 +1898,15 @@ async function ForBetterClub() {
 		);
 
 		// Nickname valid characters patch
-		patchFunction(
-			"CharacterNickname",
-			{
-				"/^[a-zA-Z\\s]*$/": "/^[\\p{L}0-9\\p{Z}'-]+$/u",
-			},
-			"Nickname validation not overridden in use"
-		);
+		if (GameVersion.startsWith("R92")) {
+			patchFunction(
+				"CharacterNickname",
+				{
+					"/^[a-zA-Z\\s]*$/": "/^[\\p{L}0-9\\p{Z}'-]+$/u",
+				},
+				"Nickname validation not overridden in use"
+			);
+		}
 
 		/*
 		 * Chat scroll after relog
@@ -1912,16 +2059,16 @@ async function ForBetterClub() {
 			{
 				"if (Character[C].IsPlayer() || Character[C].IsNpc())":
 					"if (Character[C].IsPlayer() || Character[C].IsNpc()) { let fbcLocks = [];",
-				ServerSend: `fbcLocks.push(Dictionary); if (!bceSettingValue("timerLockMassExpiry")) ServerSend`,
+				ServerSend: `fbcLocks.push(Dictionary); if (!fbcSettingValue("timerLockMassExpiry")) ServerSend`,
 				"InventoryRemove(Character[C], group.Name);": `{
 					InventoryRemove(Character[C], group.Name);
-					if (bceSettingValue("timerLockMassExpiry")) {
+					if (fbcSettingValue("timerLockMassExpiry")) {
 						A--;
 					}
 				}`,
-				"// Sync with the server and exit": `if (bceSettingValue("timerLockMassExpiry")) continue; // Sync with the server and exit`,
+				"// Sync with the server and exit": `if (fbcSettingValue("timerLockMassExpiry")) continue; // Sync with the server and exit`,
 				"}\n\t\t\t}": `}\n\t\t\t}
-				if (bceSettingValue("timerLockMassExpiry") && Character[C].IsPlayer() && fbcLocks.length > 0) {
+				if (fbcSettingValue("timerLockMassExpiry") && Character[C].IsPlayer() && fbcLocks.length > 0) {
 					if (fbcLocks.length > 1) {
 						fbcSendAction(\`\${fbcLocks.length} timer locks on \${CharacterNickname(Player)} fall off.\`)
 					} else {
@@ -1935,74 +2082,6 @@ async function ForBetterClub() {
 
 	function accurateTimerInputs() {
 		const timerInputElement = `ElementPosition("${TIMER_INPUT_ID}", 1400, 930, 250, 70);document.getElementById('${TIMER_INPUT_ID}').disabled = false;`;
-
-		// Lover locks
-		patchFunction(
-			"InventoryItemMiscLoversTimerPadlockDraw",
-			{
-				"// Draw buttons to add/remove time if available": `if (bceSettingValue("accurateTimerLocks") && Player.CanInteract() && (C.IsLoverOfPlayer() || C.IsOwnedByPlayer())) {${timerInputElement}} else`,
-			},
-			"Accurate timer inputs are not available for lover locks."
-		);
-		patchFunction(
-			"InventoryItemMiscLoversTimerPadlockClick",
-			{
-				"InventoryItemMiscLoversTimerPadlockAdd(LoverTimerChooseList[LoverTimerChooseIndex] * 3600);":
-					'if (!bceSettingValue("accurateTimerLocks")) InventoryItemMiscLoversTimerPadlockAdd(LoverTimerChooseList[LoverTimerChooseIndex] * 3600);',
-			},
-			"Accurate timer inputs are not available for lover locks."
-		);
-
-		// Mistress locks
-		patchFunction(
-			"InventoryItemMiscMistressTimerPadlockDraw",
-			{
-				"// Draw buttons to add/remove time if available": `if (bceSettingValue("accurateTimerLocks") && Player.CanInteract() && (LogQuery("ClubMistress", "Management") || (Player.MemberNumber == DialogFocusSourceItem.Property.LockMemberNumber))) {${timerInputElement}} else`,
-			},
-			"Accurate timer inputs are not available for mistress locks."
-		);
-		patchFunction(
-			"InventoryItemMiscMistressTimerPadlockClick",
-			{
-				"InventoryItemMiscMistressTimerPadlockAdd(MistressTimerChooseList[MistressTimerChooseIndex] * 60, false);":
-					'if (!bceSettingValue("accurateTimerLocks")) InventoryItemMiscMistressTimerPadlockAdd(MistressTimerChooseList[MistressTimerChooseIndex] * 60, false);',
-			},
-			"Accurate timer inputs are not available for mistress locks."
-		);
-
-		// Owner locks
-		patchFunction(
-			"InventoryItemMiscOwnerTimerPadlockDraw",
-			{
-				"// Draw buttons to add/remove time if available": `if (bceSettingValue("accurateTimerLocks") && Player.CanInteract() && C.IsOwnedByPlayer()) {${timerInputElement}} else`,
-			},
-			"Accurate timer inputs are not available for owner locks."
-		);
-		patchFunction(
-			"InventoryItemMiscOwnerTimerPadlockClick",
-			{
-				"InventoryItemMiscOwnerTimerPadlockAdd(OwnerTimerChooseList[OwnerTimerChooseIndex] * 3600);":
-					'if (!bceSettingValue("accurateTimerLocks")) InventoryItemMiscOwnerTimerPadlockAdd(OwnerTimerChooseList[OwnerTimerChooseIndex] * 3600);',
-			},
-			"Accurate timer inputs are not available for owner locks."
-		);
-
-		// Password timer
-		patchFunction(
-			"InventoryItemMiscTimerPasswordPadlockDraw",
-			{
-				"// Draw buttons to add/remove time if available": `if (bceSettingValue("accurateTimerLocks") && Player.CanInteract() && Player.MemberNumber == Property.LockMemberNumber) {${timerInputElement}} else`,
-			},
-			"Accurate timer inputs are not available for password locks."
-		);
-		patchFunction(
-			"InventoryItemMiscTimerPasswordPadlockClick",
-			{
-				"InventoryItemMiscTimerPasswordPadlockAdd(PasswordTimerChooseList[PasswordTimerChooseIndex] * 60, false);":
-					'if (!bceSettingValue("accurateTimerLocks")) InventoryItemMiscTimerPasswordPadlockAdd(PasswordTimerChooseList[PasswordTimerChooseIndex] * 60, false);',
-			},
-			"Accurate timer inputs are not available for password locks."
-		);
 
 		const loadLockTimerInput = () => {
 			let defaultValue = "0d0h5m0s";
@@ -2118,56 +2197,184 @@ async function ForBetterClub() {
 			};
 		};
 
-		const timerLoadMethods = [
-			"InventoryItemMiscLoversTimerPadlockLoad",
-			"InventoryItemMiscMistressTimerPadlockLoad",
-			"InventoryItemMiscOwnerTimerPadlockLoad",
-			"InventoryItemMiscTimerPasswordPadlockLoad",
-		];
-		const timerExitMethods = [
-			"InventoryItemMiscLoversTimerPadlockExit",
-			"InventoryItemMiscMistressTimerPadlockExit",
-			"InventoryItemMiscOwnerTimerPadlockExit",
-			"InventoryItemMiscTimerPasswordPadlockExit",
-		];
-
-		for (const fn of timerLoadMethods) {
-			SDK.hookFunction(
-				fn,
-				HOOK_PRIORITIES.AddBehaviour,
-				// eslint-disable-next-line no-loop-func
-				(args, next) => {
-					const ret = next(args);
-					if (fbcSettings.accurateTimerLocks) {
-						loadLockTimerInput();
-					}
-					return ret;
-				}
+		if (GameVersion.startsWith("R92")) {
+			// Lover locks
+			patchFunction(
+				"InventoryItemMiscLoversTimerPadlockDraw",
+				{
+					"// Draw buttons to add/remove time if available": `if (fbcSettingValue("accurateTimerLocks") && Player.CanInteract() && (C.IsLoverOfPlayer() || C.IsOwnedByPlayer())) {${timerInputElement}} else`,
+				},
+				"Accurate timer inputs are not available for lover locks."
 			);
+			patchFunction(
+				"InventoryItemMiscLoversTimerPadlockClick",
+				{
+					"InventoryItemMiscLoversTimerPadlockAdd(LoverTimerChooseList[LoverTimerChooseIndex] * 3600);":
+						'if (!fbcSettingValue("accurateTimerLocks")) InventoryItemMiscLoversTimerPadlockAdd(LoverTimerChooseList[LoverTimerChooseIndex] * 3600);',
+				},
+				"Accurate timer inputs are not available for lover locks."
+			);
+
+			// Owner locks
+			patchFunction(
+				"InventoryItemMiscOwnerTimerPadlockDraw",
+				{
+					"// Draw buttons to add/remove time if available": `if (fbcSettingValue("accurateTimerLocks") && Player.CanInteract() && C.IsOwnedByPlayer()) {${timerInputElement}} else`,
+				},
+				"Accurate timer inputs are not available for owner locks."
+			);
+			patchFunction(
+				"InventoryItemMiscOwnerTimerPadlockClick",
+				{
+					"InventoryItemMiscOwnerTimerPadlockAdd(OwnerTimerChooseList[OwnerTimerChooseIndex] * 3600);":
+						'if (!fbcSettingValue("accurateTimerLocks")) InventoryItemMiscOwnerTimerPadlockAdd(OwnerTimerChooseList[OwnerTimerChooseIndex] * 3600);',
+				},
+				"Accurate timer inputs are not available for owner locks."
+			);
+
+			const timerLoadMethods = /** @type {const} */ ([
+				"InventoryItemMiscLoversTimerPadlockLoad",
+				"InventoryItemMiscMistressTimerPadlockLoad",
+				"InventoryItemMiscOwnerTimerPadlockLoad",
+				"InventoryItemMiscTimerPasswordPadlockLoad",
+			]);
+			const timerExitMethods = /** @type {const} */ ([
+				"InventoryItemMiscLoversTimerPadlockExit",
+				"InventoryItemMiscMistressTimerPadlockExit",
+				"InventoryItemMiscOwnerTimerPadlockExit",
+				"InventoryItemMiscTimerPasswordPadlockExit",
+			]);
+
+			for (const fn of timerLoadMethods) {
+				SDK.hookFunction(
+					fn,
+					HOOK_PRIORITIES.AddBehaviour,
+					// eslint-disable-next-line no-loop-func
+					(args, next) => {
+						const ret = next(args);
+						if (fbcSettings.accurateTimerLocks) {
+							loadLockTimerInput();
+						}
+						return ret;
+					}
+				);
+			}
+
+			for (const fn of timerExitMethods) {
+				SDK.hookFunction(
+					fn,
+					HOOK_PRIORITIES.AddBehaviour,
+					// eslint-disable-next-line no-loop-func
+					(args, next) => {
+						const ret = next(args);
+						if (fbcSettings.accurateTimerLocks) {
+							ElementRemove(TIMER_INPUT_ID);
+						}
+						return ret;
+					}
+				);
+			}
+		} else {
+			// Owner/Lover locks
+			patchFunction(
+				"InventoryItemMiscOwnerTimerPadlockDraw",
+				{
+					"// Draw buttons to add/remove time if available": `if (fbcSettingValue("accurateTimerLocks") && Player.CanInteract() && validator(C)) {${timerInputElement}} else`,
+				},
+				"Accurate timer inputs are not available for owner/lover locks."
+			);
+			patchFunction(
+				"InventoryItemMiscOwnerTimerPadlockClick",
+				{
+					"InventoryItemMiscOwnerTimerPadlockAdd(OwnerTimerChooseList[OwnerTimerChooseIndex] * 3600);":
+						'if (!fbcSettingValue("accurateTimerLocks")) InventoryItemMiscOwnerTimerPadlockAdd(OwnerTimerChooseList[OwnerTimerChooseIndex] * 3600);',
+				},
+				"Accurate timer inputs are not available for owner/lover locks."
+			);
+
+			const timerLoadMethods = /** @type {const} */ ([
+				"InventoryItemMiscMistressTimerPadlockLoad",
+				"InventoryItemMiscOwnerTimerPadlockLoad",
+				"InventoryItemMiscTimerPasswordPadlockLoad",
+			]);
+			const timerExitMethods = /** @type {const} */ ([
+				"InventoryItemMiscMistressTimerPadlockExit",
+				"InventoryItemMiscOwnerTimerPadlockExit",
+				"InventoryItemMiscTimerPasswordPadlockExit",
+			]);
+
+			for (const fn of timerLoadMethods) {
+				SDK.hookFunction(
+					fn,
+					HOOK_PRIORITIES.AddBehaviour,
+					// eslint-disable-next-line no-loop-func
+					(args, next) => {
+						const ret = next(args);
+						if (fbcSettings.accurateTimerLocks) {
+							loadLockTimerInput();
+						}
+						return ret;
+					}
+				);
+			}
+
+			for (const fn of timerExitMethods) {
+				SDK.hookFunction(
+					fn,
+					HOOK_PRIORITIES.AddBehaviour,
+					// eslint-disable-next-line no-loop-func
+					(args, next) => {
+						const ret = next(args);
+						if (fbcSettings.accurateTimerLocks) {
+							ElementRemove(TIMER_INPUT_ID);
+						}
+						return ret;
+					}
+				);
+			}
 		}
 
-		for (const fn of timerExitMethods) {
-			SDK.hookFunction(
-				fn,
-				HOOK_PRIORITIES.AddBehaviour,
-				// eslint-disable-next-line no-loop-func
-				(args, next) => {
-					const ret = next(args);
-					if (fbcSettings.accurateTimerLocks) {
-						ElementRemove(TIMER_INPUT_ID);
-					}
-					return ret;
-				}
-			);
-		}
+		// Password timer
+		patchFunction(
+			"InventoryItemMiscTimerPasswordPadlockDraw",
+			{
+				"// Draw buttons to add/remove time if available": `if (fbcSettingValue("accurateTimerLocks") && Player.CanInteract() && Player.MemberNumber == Property.LockMemberNumber) {${timerInputElement}} else`,
+			},
+			"Accurate timer inputs are not available for password locks."
+		);
+		patchFunction(
+			"InventoryItemMiscTimerPasswordPadlockClick",
+			{
+				"InventoryItemMiscTimerPasswordPadlockAdd(PasswordTimerChooseList[PasswordTimerChooseIndex] * 60, false);":
+					'if (!fbcSettingValue("accurateTimerLocks")) InventoryItemMiscTimerPasswordPadlockAdd(PasswordTimerChooseList[PasswordTimerChooseIndex] * 60, false);',
+			},
+			"Accurate timer inputs are not available for password locks."
+		);
+
+		// Mistress locks
+		patchFunction(
+			"InventoryItemMiscMistressTimerPadlockDraw",
+			{
+				"// Draw buttons to add/remove time if available": `if (fbcSettingValue("accurateTimerLocks") && Player.CanInteract() && (LogQuery("ClubMistress", "Management") || (Player.MemberNumber == DialogFocusSourceItem.Property.LockMemberNumber))) {${timerInputElement}} else`,
+			},
+			"Accurate timer inputs are not available for mistress locks."
+		);
+		patchFunction(
+			"InventoryItemMiscMistressTimerPadlockClick",
+			{
+				"InventoryItemMiscMistressTimerPadlockAdd(MistressTimerChooseList[MistressTimerChooseIndex] * 60, false);":
+					'if (!fbcSettingValue("accurateTimerLocks")) InventoryItemMiscMistressTimerPadlockAdd(MistressTimerChooseList[MistressTimerChooseIndex] * 60, false);',
+			},
+			"Accurate timer inputs are not available for mistress locks."
+		);
 	}
 
 	// Load BCX
-	/** @type {(addon: "BCX" | "EBCH" | "MBS", source: string) => Promise<boolean>} */
+	/** @type {(addon: keyof typeof addonTypes, source: string) => Promise<boolean>} */
 	async function loadExternalAddon(addon, source) {
 		await waitFor(settingsLoaded);
 
-		function hookBCX() {
+		function hookAddonAPI() {
 			if (addon === "BCX") {
 				BCX = w.bcx?.getModApi("FBC");
 			}
@@ -2176,12 +2383,14 @@ async function ForBetterClub() {
 		if (bcModSdk.getModsInfo().some((mod) => mod.name === addon)) {
 			addonTypes[addon] = "external";
 			debug(`${addon} already loaded, skipping loadExternalAddon()`);
-			hookBCX();
+			hookAddonAPI();
 			return false;
 		}
 
-		logInfo("Loading", addon, "from", source);
-		await fetch(`${source}?_=${(Date.now() / 10000).toFixed(0)}`)
+		const sourceRequestUrl = `${source}?v=${Date.now()}`;
+
+		logInfo("Loading", addon, "from", source, sourceRequestUrl);
+		await fetch(sourceRequestUrl)
 			.then((resp) => resp.text())
 			.then((resp) => {
 				resp = resp.replace(
@@ -2191,7 +2400,7 @@ async function ForBetterClub() {
 				eval?.(resp);
 			});
 		logInfo("Loaded", addon);
-		hookBCX();
+		hookAddonAPI();
 		return true;
 	}
 
@@ -2323,11 +2532,11 @@ async function ForBetterClub() {
 						return;
 					}
 					try {
-						/** @type {ItemBundle[]} */
-						// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-						const bundle = bundleString.startsWith("[")
-							? JSON.parse(bundleString)
-							: JSON.parse(LZString.decompressFromBase64(bundleString));
+						const bundle = /** @type {ItemBundle[]} */ (
+							bundleString.startsWith("[")
+								? JSON.parse(bundleString)
+								: JSON.parse(LZString.decompressFromBase64(bundleString))
+						);
 
 						if (
 							!Array.isArray(bundle) ||
@@ -2508,6 +2717,20 @@ async function ForBetterClub() {
 													a.FBC
 											  } Alt Arousal: ${a.BCEArousal?.toString()}`
 											: ""
+									}${
+										a.FBCOtherAddons &&
+										a.FBCOtherAddons.some(
+											(m) => !["BCX", "FBC"].includes(m.name)
+										)
+											? `\nOther Addons:\n- ${a.FBCOtherAddons.filter(
+													(m) => !["BCX", "FBC"].includes(m.name)
+											  )
+													.map(
+														(m) =>
+															`${m.name} v${m.version} ${m.repository ?? ""}`
+													)
+													.join("\n- ")}`
+											: ""
 									}`
 							)
 							.filter((a) => a)
@@ -2554,12 +2777,9 @@ async function ForBetterClub() {
 					.length / settingsPerPage
 			);
 
-		/** @type {[number, number, number, number]} */
-		const discordInvitePosition = [1500, 60, 250, 50];
-		/** @type {[number, number, number, number]} */
-		const licensePosition = [1500, 120, 250, 50];
-		/** @type {[number, number, number, number]} */
-		const websitePosition = [1240, 60, 250, 50];
+		const discordInvitePosition = /** @type {const} */ ([1500, 60, 250, 50]);
+		const licensePosition = /** @type {const} */ ([1500, 120, 250, 50]);
+		const websitePosition = /** @type {const} */ ([1240, 60, 250, 50]);
 		let currentPageNumber = 0;
 
 		/** @type {SettingsCategory | null} */
@@ -2580,7 +2800,7 @@ async function ForBetterClub() {
 			"addons",
 			"buttplug",
 		];
-		const settingCategoryLabels = {
+		const settingCategoryLabels = /** @type {const} */ ({
 			chat: "Chat & Social",
 			activities: "Activities & Arousal",
 			appearance: "Appearance & Wardrobe",
@@ -2591,7 +2811,7 @@ async function ForBetterClub() {
 			addons: "Other Addons",
 			buttplug: "Buttplug.io Toys",
 			hidden: "",
-		};
+		});
 
 		const vibratingSlots = [
 			"None",
@@ -2604,8 +2824,7 @@ async function ForBetterClub() {
 			),
 		];
 
-		/** @type {[number, number, number, number]} */
-		const scanButtonPosition = [1650, 225, 150, 50];
+		const scanButtonPosition = /** @type {const} */ ([1650, 225, 150, 50]);
 
 		const currentDefaultSettings = (category) =>
 			Object.entries(defaultSettings).filter(
@@ -2771,7 +2990,7 @@ async function ForBetterClub() {
 						"Silver"
 					);
 
-					if (currentSetting in defaultSettings) {
+					if (isDefaultSettingKey(currentSetting)) {
 						drawTooltip(
 							300,
 							830,
@@ -2996,10 +3215,9 @@ async function ForBetterClub() {
 			} else if (CurrentScreen === "Relog") {
 				name = Player.AccountName;
 			}
-			/** @type {Passwords} */
-			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-			let passwords = JSON.parse(
-				localStorage.getItem(localStoragePasswordsKey)
+
+			let passwords = /** @type {Passwords} */ (
+				JSON.parse(localStorage.getItem(localStoragePasswordsKey))
 			);
 			if (!passwords) {
 				passwords = {};
@@ -3009,10 +3227,8 @@ async function ForBetterClub() {
 		};
 
 		w.bceClearPassword = (accountname) => {
-			/** @type {Passwords} */
-			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-			const passwords = JSON.parse(
-				localStorage.getItem(localStoragePasswordsKey)
+			const passwords = /** @type {Passwords} */ (
+				JSON.parse(localStorage.getItem(localStoragePasswordsKey))
 			);
 			if (
 				!passwords ||
@@ -3029,10 +3245,10 @@ async function ForBetterClub() {
 		async function loginCheck() {
 			await waitFor(() => CurrentScreen === "Login");
 
-			/** @type {() => Passwords} */
 			const loadPasswords = () =>
-				// eslint-disable-next-line @typescript-eslint/no-unsafe-return
-				JSON.parse(localStorage.getItem(localStoragePasswordsKey));
+				/** @type {Passwords} */ (
+					JSON.parse(localStorage.getItem(localStoragePasswordsKey))
+				);
 
 			/** @type {{ passwords: Passwords, posMaps: Record<string, string> }} */
 			const loginData = {
@@ -3121,10 +3337,8 @@ async function ForBetterClub() {
 				return;
 			}
 			breakCircuit = true;
-			/** @type {Passwords} */
-			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-			let passwords = JSON.parse(
-				localStorage.getItem(localStoragePasswordsKey)
+			let passwords = /** @type {Passwords} */ (
+				JSON.parse(localStorage.getItem(localStoragePasswordsKey))
 			);
 			debug("Attempting to log in again as", Player.AccountName);
 			if (!passwords) {
@@ -3224,7 +3438,7 @@ async function ForBetterClub() {
 	}
 
 	function bceStyles() {
-		const css = `
+		const css = /* CSS */ `
 		.bce-beep-link {
 			text-decoration: none;
 		}
@@ -3510,7 +3724,7 @@ async function ForBetterClub() {
 		patchFunction(
 			"ChatRoomKeyDown",
 			{
-				"ChatRoomSendChat()": `if (bceSettingValue("ctrlEnterOoc") && event.ctrlKey && ElementValue("InputChat")?.trim()) {
+				"ChatRoomSendChat()": `if (fbcSettingValue("ctrlEnterOoc") && event.ctrlKey && ElementValue("InputChat")?.trim()) {
 						let text = ElementValue("InputChat");
 						let prefix = "";
 						if (!text) {
@@ -3858,6 +4072,11 @@ async function ForBetterClub() {
 					{ Expression: "Dazed", Limit: 20 },
 					{ Expression: null, Limit: 0 },
 				],
+				// Pussy group includes Penis, which is the only type of "pussy" with expressions and controls erections.
+				Pussy: [
+					{ Expression: "Hard", Limit: 50 },
+					{ Expression: null, Limit: 0 },
+				],
 			};
 		}
 
@@ -3948,6 +4167,7 @@ async function ForBetterClub() {
 			}
 			bceExpressionsQueue.push(event);
 		}
+		w.fbcPushEvent = pushEvent;
 
 		if (!w.bce_EventExpressions) {
 			// eslint-disable-next-line camelcase
@@ -5366,9 +5586,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"CharacterSetActivePose",
 			HOOK_PRIORITIES.OverrideBehaviour,
-			(args, next) => {
-				// eslint-disable-next-line prefer-const
-				let [C, Pose] = args;
+			(/** @type {[Character, string | string[] | null]} */ args, next) => {
+				const [C] = args;
+				let [, Pose] = args;
 				if (
 					!isCharacter(C) ||
 					(!isStringOrStringArray(Pose) && Pose !== null) ||
@@ -5377,6 +5597,7 @@ async function ForBetterClub() {
 				) {
 					return next(args);
 				}
+
 				if (!Pose || (Array.isArray(Pose) && Pose.every((p) => !p))) {
 					Pose = ["BaseUpper", "BaseLower"];
 				}
@@ -5873,19 +6094,6 @@ async function ForBetterClub() {
 						!InventoryGroupIsBlocked(c, c.FocusGroup.Name)))
 			);
 		};
-		const canAccessDifficultyMenu = () => {
-			const c = CharacterGetCurrent();
-			const item = c?.FocusGroup?.Name && InventoryGet(c, c.FocusGroup.Name);
-			const locked = item?.Property?.LockedBy;
-			const canUnlock = !locked || DialogCanUnlock(c, item);
-			return (
-				fbcSettings.layeringMenu &&
-				Player.CanInteract() &&
-				c?.FocusGroup?.Name &&
-				!InventoryGroupIsBlocked(c, c.FocusGroup.Name) &&
-				canUnlock
-			);
-		};
 
 		// Pseudo-items that we do not want to process for color copying
 		const ignoredColorCopiableAssets = [
@@ -5949,16 +6157,8 @@ async function ForBetterClub() {
 			}
 		}
 
-		/** @type {"Priority" | "Difficulty"} */
-		let priorityField = "Priority",
-			prioritySubscreen = false;
+		let prioritySubscreen = false;
 		let layerPage = 0;
-		const FIELDS = Object.freeze({
-			/** @type {"Priority"} */
-			Priority: "Priority",
-			/** @type {"Difficulty"} */
-			Difficulty: "Difficulty",
-		});
 
 		const preview = CharacterLoadSimple(
 			`LayeringPreview-${Player.MemberNumber}`
@@ -5980,65 +6180,55 @@ async function ForBetterClub() {
 			"Layering preview affected by blindness"
 		);
 
-		/** @type {(C: Character, FocusItem: Item, field: "Priority" | "Difficulty") => void} */
-		function prioritySubscreenEnter(C, FocusItem, field) {
+		/** @type {(C: Character, FocusItem: Item) => void} */
+		function prioritySubscreenEnter(C, FocusItem) {
 			DialogFocusItem = FocusItem;
 			prioritySubscreen = true;
-			priorityField = field;
-			let initialValue = 0;
-			switch (field) {
-				case FIELDS.Priority:
-					initialValue = C.AppearanceLayers.find(
-						(a) => a.Asset === FocusItem.Asset
-					).Priority;
-					layerPriorities = {};
-					for (const layer of FocusItem.Asset.Layer) {
-						if (!layer.Name) {
-							continue;
-						}
-						const drawnLayer = C.AppearanceLayers.find(
-							(a) => a.Asset === FocusItem.Asset && a.Name === layer.Name
-						);
-						let priority = layer.Priority ?? FocusItem.Asset.Priority ?? -1;
-						if (
-							typeof FocusItem?.Property?.OverridePriority === "object" &&
-							layer.Name in FocusItem.Property.OverridePriority
-						) {
-							priority = FocusItem?.Property?.OverridePriority[layer.Name];
-						}
-						if (drawnLayer) {
-							priority = drawnLayer.Priority ?? priority;
-						}
-						layerPriorities[layer.Name] = priority;
-						const el = ElementCreateInput(
-							layerElement(layer.Name),
-							"number",
-							"",
-							"20"
-						);
-						ElementValue(layerElement(layer.Name), priority.toString());
-						el.setAttribute("data-layer", layer.Name);
-						el.className = layerPriority;
-						// eslint-disable-next-line no-loop-func -- layerPriorities scope is outside the function, ElementValue is a global function
-						el.addEventListener("change", () => {
-							layerPriorities[layer.Name] = parseInt(
-								ElementValue(layerElement(layer.Name))
-							);
-							updateItemPriorityFromLayerPriorityInput(
-								InventoryGet(preview, FocusItem.Asset.Group.Name)
-							);
-						});
-					}
-					hideAllLayerElements();
-					if (typeof FocusItem?.Property?.OverridePriority === "object") {
-						advancedPriorities = true;
-					}
-					break;
-				case FIELDS.Difficulty:
-					initialValue = C.Appearance.find((a) => a === FocusItem).Difficulty;
-					break;
-				default:
-					break;
+			advancedPriorities = false;
+			const initialValue = C.AppearanceLayers.find(
+				(a) => a.Asset === FocusItem.Asset
+			).Priority;
+			layerPriorities = {};
+			for (const layer of FocusItem.Asset.Layer) {
+				if (!layer.Name) {
+					continue;
+				}
+				const drawnLayer = C.AppearanceLayers.find(
+					(a) => a.Asset === FocusItem.Asset && a.Name === layer.Name
+				);
+				let priority = layer.Priority ?? FocusItem.Asset.Priority ?? -1;
+				if (
+					typeof FocusItem?.Property?.OverridePriority === "object" &&
+					layer.Name in FocusItem.Property.OverridePriority
+				) {
+					priority = FocusItem?.Property?.OverridePriority[layer.Name];
+				}
+				if (drawnLayer) {
+					priority = drawnLayer.Priority ?? priority;
+				}
+				layerPriorities[layer.Name] = priority;
+				const el = ElementCreateInput(
+					layerElement(layer.Name),
+					"number",
+					"",
+					"20"
+				);
+				ElementValue(layerElement(layer.Name), priority.toString());
+				el.setAttribute("data-layer", layer.Name);
+				el.className = layerPriority;
+				// eslint-disable-next-line no-loop-func -- layerPriorities scope is outside the function, ElementValue and InventoryGet are global functions
+				el.addEventListener("change", () => {
+					layerPriorities[layer.Name] = parseInt(
+						ElementValue(layerElement(layer.Name))
+					);
+					updateItemPriorityFromLayerPriorityInput(
+						InventoryGet(preview, FocusItem.Asset.Group.Name)
+					);
+				});
+			}
+			hideAllLayerElements();
+			if (typeof FocusItem?.Property?.OverridePriority === "object") {
+				advancedPriorities = true;
 			}
 			ElementCreateInput(layerPriority, "number", "", "20");
 			ElementValue(layerPriority, initialValue.toString());
@@ -6143,7 +6333,7 @@ async function ForBetterClub() {
 						CharacterAppearanceMode === "Cloth" &&
 						assetVisible(C, item)
 					) {
-						prioritySubscreenEnter(C, item, FIELDS.Priority);
+						prioritySubscreenEnter(C, item);
 					}
 				}
 				return next(args);
@@ -6157,21 +6347,7 @@ async function ForBetterClub() {
 				const [C] = args;
 				if (isCharacter(C) && canAccessLayeringMenus()) {
 					const focusItem = InventoryGet(C, C.FocusGroup?.Name);
-					const lock = InventoryGetLock(focusItem);
 					if (assetWorn(C, focusItem)) {
-						if (fbcSettings.modifyDifficulty && canAccessDifficultyMenu()
-								&& !(fbcSettings.antiLoosenOwnerLock && (focusItem.Asset.OwnerOnly || (lock && lock.Asset.OwnerOnly)) && !C.IsOwnedByPlayer())) {
-							DrawButton(
-								10,
-								890,
-								52,
-								52,
-								"",
-								"White",
-								ICONS.TIGHTEN,
-								displayText("Loosen or tighten")
-							);
-						}
 						if (
 							colorCopiableAssets.includes(focusItem.Asset.Name) &&
 							Player.CanInteract()
@@ -6227,7 +6403,7 @@ async function ForBetterClub() {
 			DrawCharacter(preview, 1300, 100, 0.9, false);
 
 			const layerNames = Object.keys(layerPriorities);
-			if (priorityField === FIELDS.Priority && layerNames.length > 0) {
+			if (layerNames.length > 0) {
 				DrawCheckbox(100, 50, 64, 64, "", advancedPriorities, false, "White");
 				drawTextFitLeft(
 					displayText("Adjust individual layers"),
@@ -6258,13 +6434,7 @@ async function ForBetterClub() {
 				}
 			} else {
 				// Localization guide: valid options for priorityField can be seen in the "const FIELDS" object above
-				DrawText(
-					displayText(`Set item ${priorityField}`),
-					950,
-					150,
-					"White",
-					"Black"
-				);
+				DrawText(displayText(`Set item priority`), 950, 150, "White", "Black");
 				ElementPosition(layerPriority, 950, 230, 100);
 				hideAllLayerElements();
 			}
@@ -6275,7 +6445,7 @@ async function ForBetterClub() {
 				"White",
 				"Icons/Accept.png",
 				// Localization guide: valid options for priorityField can be seen in the "const FIELDS" object above
-				displayText(`Set ${priorityField}`)
+				displayText(`Set priority`)
 			);
 		}
 
@@ -6334,16 +6504,8 @@ async function ForBetterClub() {
 						prioritySubscreenClick(C, focusItem);
 						return null;
 					}
-					if (
-						assetWorn(C, focusItem) &&
-						MouseIn(10, 890, 52, 52) &&
-						fbcSettings.modifyDifficulty &&
-						canAccessDifficultyMenu()
-					) {
-						prioritySubscreenEnter(C, focusItem, FIELDS.Difficulty);
-						return null;
-					} else if (assetVisible(C, focusItem) && MouseIn(10, 948, 52, 52)) {
-						prioritySubscreenEnter(C, focusItem, FIELDS.Priority);
+					if (assetVisible(C, focusItem) && MouseIn(10, 948, 52, 52)) {
+						prioritySubscreenEnter(C, focusItem);
 						return null;
 					} else if (
 						assetWorn(C, focusItem) &&
@@ -6409,32 +6571,7 @@ async function ForBetterClub() {
 
 		/** @type {(C: Character, focusItem: Item) => void} */
 		function savePrioritySubscreenChanges(C, focusItem) {
-			switch (priorityField) {
-				case FIELDS.Priority:
-					updateItemPriorityFromLayerPriorityInput(focusItem);
-					break;
-				case FIELDS.Difficulty:
-					{
-						const newDifficulty = parseInt(ElementValue(layerPriority));
-						let action = null;
-						if (focusItem.Difficulty > newDifficulty) {
-							action = "loosens";
-						} else if (focusItem.Difficulty < newDifficulty) {
-							action = "tightens";
-						}
-						focusItem.Difficulty = newDifficulty;
-						fbcSendAction(
-							displayText(`$PlayerName ${action} $TargetName's $ItemName`, {
-								$PlayerName: CharacterNickname(Player),
-								$TargetName: CharacterNickname(C),
-								$ItemName: focusItem.Asset.Description.toLowerCase(),
-							})
-						);
-					}
-					break;
-				default:
-					break;
-			}
+			updateItemPriorityFromLayerPriorityInput(focusItem);
 			debug("updated item", focusItem);
 			CharacterRefresh(C, false, false);
 			ChatRoomCharacterItemUpdate(C, C.FocusGroup?.Name);
@@ -6576,6 +6713,9 @@ async function ForBetterClub() {
 				Player.BCEArousalProgress || Player.ArousalSettings.Progress || 0;
 			message.Dictionary[0].message.enjoyment = Player.BCEEnjoyment || 1;
 		}
+		if (fbcSettings.shareAddons) {
+			message.Dictionary[0].message.otherAddons = bcModSdk.getModsInfo();
+		}
 		ServerSend("ChatRoomChat", message);
 	}
 	if (ServerIsConnected) {
@@ -6622,6 +6762,7 @@ async function ForBetterClub() {
 							if (message.replyRequested) {
 								sendHello(sender.MemberNumber);
 							}
+							sender.FBCOtherAddons = message.otherAddons;
 							break;
 						case MESSAGE_TYPES.ArousalSync:
 							sender.BCEArousal = message.alternateArousal || false;
@@ -7280,8 +7421,9 @@ async function ForBetterClub() {
 		);
 
 		// X, Y, width, height. X and Y centered.
-		/** @type {[number, number, number, number]} */
-		const gagAntiCheatMenuPosition = [1700, 908, 200, 45],
+		const gagAntiCheatMenuPosition = /** @type {const} */ ([
+				1700, 908, 200, 45,
+			]),
 			/** @type {[number, number, number, number]} */
 			gagCheatMenuPosition = [1700, 908 + 45, 200, 45],
 			tooltipPosition = { X: 1000, Y: 910, Width: 200, Height: 90 };
@@ -7565,18 +7707,22 @@ async function ForBetterClub() {
 					}
 				}
 			`,
+
 				"if (Progress < -25) Progress = -25;": `
 				if (!C.BCEArousal) {
 					if (Progress < -25) Progress = -25;
 				} else {
 					if (Progress < -20) Progress = -20;
-				}`,
+				}
+				`,
+
 				"if (Progress > 25) Progress = 25;": `
 				if (!C.BCEArousal) {
 					if (Progress > 25) Progress = 25;
 				} else {
 					if (Progress > 20) Progress = 20;
-				}`,
+				}
+				`,
 			},
 			"Alternate arousal algorithm will be incorrect."
 		);
@@ -7740,13 +7886,16 @@ async function ForBetterClub() {
 					}
 				} else {
 				`,
+
 				"if ((Factor == -1)) {ActivityVibratorLevel(Character[C], 0);}\n\n\t\t\t\t\t\t}": `if (Factor == -1) {
 						ActivityVibratorLevel(Character[C], 0);
 					}
 				}
 			} else {
 				ActivityVibratorLevel(Character[C], 0);
-			}`,
+			}
+			`,
+
 				"// No decay if there's a vibrating item running": `// No decay if there's a vibrating item running
 			Character[C].BCEEnjoyment = 1;`,
 			},
@@ -8764,9 +8913,9 @@ async function ForBetterClub() {
 			return friendMessages.get(friendId);
 		};
 
-		/** @type {{ [key: string]: { historyRaw: RawHistory[] } }} */
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-		const history = JSON.parse(localStorage.getItem(storageKey()) || "{}");
+		const history = /** @type {Record<string, {historyRaw: RawHistory[]}>} */ (
+			JSON.parse(localStorage.getItem(storageKey()) || "{}")
+		);
 		for (const [friendIdStr, friendHistory] of Object.entries(history)) {
 			const friendId = parseInt(friendIdStr);
 			const friend = handleUnseenFriend(friendId);
@@ -9096,7 +9245,7 @@ async function ForBetterClub() {
 				let wardrobe = next(args);
 				if (
 					isWardrobe(wardrobe) &&
-					fbcSettings.expandedWardrobe &&
+					fbcSettings.extendedWardrobe &&
 					wardrobe.length < EXPANDED_WARDROBE_SIZE
 				) {
 					wardrobe = loadExtendedWardrobe(wardrobe);
@@ -9157,10 +9306,10 @@ async function ForBetterClub() {
 		}
 		if (Player.OnlineSettings.BCEWardrobe) {
 			try {
-				/** @type {ItemBundle[][]} */
-				// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-				const additionalItemBundle = JSON.parse(
-					LZString.decompressFromUTF16(Player.OnlineSettings.BCEWardrobe)
+				const additionalItemBundle = /** @type {ItemBundle[][]} */ (
+					JSON.parse(
+						LZString.decompressFromUTF16(Player.OnlineSettings.BCEWardrobe)
+					)
 				);
 				if (isWardrobe(additionalItemBundle)) {
 					for (let i = DEFAULT_WARDROBE_SIZE; i < EXPANDED_WARDROBE_SIZE; i++) {
@@ -9853,7 +10002,7 @@ async function ForBetterClub() {
 			}
 		}
 
-		/** @type {(characterBundle: Character) => Promise<void>} */
+		/** @type {(characterBundle: NetCharacter) => Promise<void>} */
 		async function saveProfile(characterBundle) {
 			await quotaSafetyCheck();
 
@@ -9953,8 +10102,7 @@ async function ForBetterClub() {
 				// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
 				const profile = await profiles.get(memberNumber);
 				const C = CharacterLoadOnline(
-					// eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-					JSON.parse(profile.characterBundle),
+					/** @type {NetCharacter} */ (JSON.parse(profile.characterBundle)),
 					memberNumber
 				);
 				C.BCESeen = profile.seen;
@@ -10283,10 +10431,8 @@ async function ForBetterClub() {
 	async function crafting() {
 		await waitFor(() => Array.isArray(Commands) && Commands.length > 0);
 
-		/** @type {[number, number, number, number]} */
-		const importPosition = [1485, 15, 90, 90];
-		/** @type {[number, number, number, number]} */
-		const exportPosition = [1585, 15, 90, 90];
+		const importPosition = /** @type {const} */ ([1485, 15, 90, 90]);
+		const exportPosition = /** @type {const} */ ([1585, 15, 90, 90]);
 
 		function importCraft() {
 			const str = window.prompt(displayText("Paste the craft here")) || "";
@@ -10294,9 +10440,9 @@ async function ForBetterClub() {
 				window.alert(displayText("No craft to import"));
 			}
 			try {
-				/** @type {Craft} */
-				// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-				const craft = JSON.parse(LZString.decompressFromBase64(str));
+				const craft = /** @type {Craft} */ (
+					JSON.parse(LZString.decompressFromBase64(str))
+				);
 				if (!isNonNullObject(craft)) {
 					logError(craft);
 					throw new Error(`invalid craft type ${typeof craft} ${str}`);
@@ -10356,31 +10502,62 @@ async function ForBetterClub() {
 			}
 		);
 
-		SDK.hookFunction(
-			"DrawAssetPreview",
-			HOOK_PRIORITIES.AddBehaviour,
-			/** @type {(args: [number, number, Asset, { C: Character; Description: string; Background: string; Foreground: string; Vibrating: boolean; Border: boolean; Hover: boolean; HoverBackground: string; Disabled: boolean; Craft: Craft; }], next: (args: [number, number, Asset, { C: Character; Description: string; Background: string; Foreground: string; Vibrating: boolean; Border: boolean; Hover: boolean; HoverBackground: string; Disabled: boolean; Craft: Craft; }]) => void) => void} */
-			(args, next) => {
-				const ret = next(args);
-				const [x, y, , options] = args;
-				if (options) {
-					const { Craft } = options;
-					if (MouseIn(x, y, 225, 275) && Craft) {
-						drawTooltip(x, y, 225, displayText(Craft.Property), "center");
-						drawTooltip(
-							1000,
-							y - 70,
-							975,
-							`${displayText("Description:")} ${
-								Craft.Description || "<no description>"
-							}`,
-							"left"
-						);
+		if (GameVersion.startsWith("R92")) {
+			SDK.hookFunction(
+				"DrawAssetPreview",
+				HOOK_PRIORITIES.AddBehaviour,
+				/** @type {(args: [number, number, Asset, { C: Character; Description: string; Background: string; Foreground: string; Vibrating: boolean; Border: boolean; Hover: boolean; HoverBackground: string; Disabled: boolean; Craft: Craft; }], next: (args: [number, number, Asset, { C: Character; Description: string; Background: string; Foreground: string; Vibrating: boolean; Border: boolean; Hover: boolean; HoverBackground: string; Disabled: boolean; Craft: Craft; }]) => void) => void} */
+				(args, next) => {
+					const ret = next(args);
+					const [x, y, , options] = args;
+					if (options) {
+						const { Craft } = options;
+						if (MouseIn(x, y, 225, 275) && Craft) {
+							drawTooltip(x, y, 225, displayText(Craft.Property), "center");
+							drawTooltip(
+								1000,
+								y - 70,
+								975,
+								`${displayText("Description:")} ${
+									Craft.Description || "<no description>"
+								}`,
+								"left"
+							);
+						}
 					}
+					return ret;
 				}
-				return ret;
-			}
-		);
+			);
+		} else {
+			SDK.hookFunction(
+				"DrawItemPreview",
+				HOOK_PRIORITIES.AddBehaviour,
+				/**
+				 * @param {[Item, Character, number, number, {}]} args
+				 * @param {(args: [Item, Character, number, number, {}]) => void} next
+				 */
+				(args, next) => {
+					const ret = next(args);
+					const [item, , x, y] = args;
+					if (item) {
+						const { Craft } = item;
+						if (MouseIn(x, y, 225, 275) && Craft) {
+							drawTooltip(x, y, 225, displayText(Craft.Property), "center");
+							drawTooltip(
+								1000,
+								y - 70,
+								975,
+								`${displayText("Description:")} ${
+									Craft.Description || "<no description>"
+								}`,
+								"left"
+							);
+						}
+					}
+					return ret;
+				}
+			);
+		}
 	}
 
 	async function revampLilian() {

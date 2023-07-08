@@ -10,6 +10,7 @@ declare global {
   /** @deprecated */
   var bceSendAction: (text: string) => void;
   var fbcSendAction: (text: string) => void;
+  var fbcPushEvent: (evt: ExpressionEvent) => void;
   var fbcChatNotify: (node: HTMLElement | HTMLElement[] | string) => void;
   var fbcDebug: (copy?: boolean) => Promise<string>;
   /** @deprecated */
@@ -134,7 +135,7 @@ declare global {
   var InformationSheetSelection: Character | null;
   var InformationSheetLoadCharacter: (C: Character) => void;
   var CharacterLoadOnline: (
-    data: Record<string, unknown>,
+    data: NetCharacter,
     sourceMemberNumber: number
   ) => Character;
   var CraftingUpdatePreview: () => void;
@@ -160,7 +161,7 @@ declare global {
   var ServerInit: () => void;
   var DialogFocusSourceItem: Item | null;
   var DialogFocusItem: Item | null;
-  var CharacterNickname: (C: Character) => string;
+  var CharacterNickname: (C: BaseCharacter) => string;
   var OnlineProfileExit: (save: boolean) => void;
   var ElementCreateTextArea: (id: string) => HTMLTextAreaElement;
   var ElementCreateInput: (
@@ -442,7 +443,6 @@ declare global {
   ) => ItemBundle[][];
   var CharacterCompressWardrobe: (wardrobe: ItemBundle[][]) => string;
   var CharacterAppearanceWardrobeOffset: number;
-  var MainRun: (time: DOMHighResTimeStamp) => void;
   var GameRun: (time: DOMHighResTimeStamp) => void;
   var NotificationRaise: (
     eventType: "Beep",
@@ -457,7 +457,6 @@ declare global {
     MainCanvas: HTMLCanvasElement;
   }
   type Passwords = Record<string, string>;
-  type Settings = Record<string, boolean | string> & { version?: number };
   type SettingsCategory =
     | "performance"
     | "chat"
@@ -487,7 +486,6 @@ declare global {
 
   type DefaultSetting = DefaultSettingBoolean | DefaultSettingString;
 
-  type DefaultSettings = Readonly<Record<string, DefaultSetting>>;
   type Duration = {
     days: number;
     hours: number;
@@ -528,7 +526,7 @@ declare global {
   } & Character;
   type NetCharacter = {
     Appearance: ItemBundle[];
-  } & Character;
+  } & BaseCharacter;
   type PlayerCharacter = {
     WhiteList: number[];
     BlackList: number[];
@@ -545,30 +543,17 @@ declare global {
     Start: number;
     Stage: number;
   };
-  interface Character {
-    ArousalSettings: ArousalSettings;
-    Inventory: unknown;
-    OnlineSettings: OnlineSettings;
-    OnlineSharedSettings: OnlineSharedSettings;
-    MemberNumber: number;
-    Reputation: { Type: string; Value: number }[];
-    Title: string;
-    Name: string;
-    Nickname?: string;
-    AccountName: string;
-    Creation: number;
+  interface Character extends BaseCharacter {
     Appearance: Item[];
-    AssetFamily: "Female3DCG";
     AppearanceLayers: ItemLayer[];
     Wardrobe: ItemBundle[][];
     FocusGroup: AssetGroup;
     HasHiddenItems: boolean;
     GetBlindLevel: () => number;
-    ActivePose: string[] | null;
-    Crafting: Craft[];
     FBC: string;
+    FBCOtherAddons?: readonly import("./types/bcModSdk").ModSDKModInfo[];
     BCEArousal: boolean;
-    BCECapabilities: string[];
+    BCECapabilities: readonly string[];
     BCEArousalProgress: number;
     BCEEnjoyment: number;
     /** @deprecated */
@@ -583,9 +568,6 @@ declare global {
     CanInteract: () => boolean;
     LastChatRoom: string;
     LastChatRoomPrivate: boolean;
-    LabelColor: string;
-    Ownership: Relationship;
-    Lovership: Relationship[];
     Dialog: {
       Function: string;
       NextStage: string;
@@ -595,6 +577,25 @@ declare global {
       Stage: string;
       Modded?: boolean;
     }[];
+  }
+  interface BaseCharacter {
+    AssetFamily: "Female3DCG";
+    ArousalSettings: ArousalSettings;
+    Inventory: unknown;
+    OnlineSettings: OnlineSettings;
+    OnlineSharedSettings: OnlineSharedSettings;
+    MemberNumber: number;
+    Reputation: { Type: string; Value: number }[];
+    Title: string;
+    Name: string;
+    Nickname?: string;
+    AccountName: string;
+    Creation: number;
+    LabelColor: string;
+    Ownership: Relationship;
+    Lovership: Relationship[];
+    ActivePose: string[] | null;
+    Crafting: Craft[];
   }
   type Beep = {
     Message?: string;
@@ -811,12 +812,13 @@ declare global {
   type BCEMessage = {
     type: string;
     version: string;
-    capabilities?: string[];
+    capabilities?: readonly string[];
     alternateArousal?: boolean;
     replyRequested?: boolean;
     progress?: number;
     enjoyment?: number;
     activity?: BCEActivity;
+    otherAddons?: readonly import("./types/bcModSdk").ModSDKModInfo[];
   };
   type ChatMessageDictionary = {
     Tag?: string;
@@ -846,7 +848,7 @@ declare global {
     SourceMemberNumber: number;
   };
   type ChatRoomSyncEvent = {
-    Character: Character[];
+    Character: NetCharacter[];
     SourceMemberNumber: number;
   };
   type ChatRoomSyncItemEvent = {
