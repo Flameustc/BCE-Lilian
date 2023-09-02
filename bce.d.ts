@@ -36,6 +36,7 @@ declare global {
   var bce_ArousalExpressionStages: ArousalExpressionStages;
   var bce_ActivityTriggers: ActivityTrigger[];
   var bcModSdk: ModSDKGlobalAPI | undefined;
+  var FUSAM: FUSAMPublicAPI | undefined;
   var ActivityDictionary: string[][];
   var ActivityCheckPrerequisite: (
     pre: string,
@@ -62,6 +63,21 @@ declare global {
   var CharacterLoadSimple: (accName: string) => Character;
   var CharacterDelete: (accName: string) => void;
   var CharacterNaked: (C: Character) => void;
+  var ChatRoomChatInputRect: [number, number, number, number];
+  var DialogMenuMode:
+    | "dialog"
+    | "items"
+    | "colorDefault"
+    | "colorExpression"
+    | "colorItem"
+    | "permissions"
+    | "activities"
+    | "locking"
+    | "locked"
+    | "extended"
+    | "tighten"
+    | "crafted"
+    | "struggle";
   var ItemColorLoad: (
     c: Character,
     item: Item,
@@ -429,6 +445,7 @@ declare global {
   var CharacterSetCurrent: (C: Character) => void;
   var CommonCSVCache: { [key: string]: string[][] };
   var CharacterBuildDialog: (C: Character, csv: string[][]) => void;
+  var ChatRoomAppendChat: (div: HTMLElement) => void;
   var ChatRoomMessage: (data: ChatMessage) => void;
   var ChatRoomSyncPose: (data: {
     MemberNumber: number;
@@ -486,6 +503,10 @@ declare global {
 
   type DefaultSetting = DefaultSettingBoolean | DefaultSettingString;
 
+  type FBCNote = {
+    note: string;
+    updatedAt?: number;
+  };
   type Duration = {
     days: number;
     hours: number;
@@ -644,6 +665,7 @@ declare global {
     LockMemberNumber?: number;
     LockedBy?: string;
     Effect?: string[];
+    BlinkState?: unknown;
   };
   type AssetGroup = {
     Name: string;
@@ -825,6 +847,8 @@ declare global {
     message?: BCEMessage;
     MemberNumber?: number;
     Text?: string;
+    TargetCharacter?: number;
+    SourceCharacter?: number;
   };
   type ChatMessageBase = {
     Type: string;
@@ -901,4 +925,14 @@ declare global {
     Draw: (C: Character) => void;
     HandleEvent?: (EventType: "KeyDown" | "Click") => void;
   }
+
+  type FUSAMPublicAPI = {
+    present: true;
+    addons: Record<string, FUSAMAddonState>;
+  };
+
+  type FUSAMAddonState = {
+    distribution: string;
+    status: "loading" | "loaded" | "error";
+  };
 }
