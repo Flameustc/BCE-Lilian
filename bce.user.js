@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name Bondage Club Enhancements
 // @namespace https://www.bondageprojects.com/
-// @version 4.47
+// @version 4.63
 // @description FBC - For Better Club - enhancements for the bondage club - old name kept in tampermonkey for compatibility
 // @author Sidious
 // @match https://bondageprojects.elementfx.com/*
@@ -38,20 +38,25 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const FBC_VERSION = "4.47-Lilian-20230902135200";
-const settingsVersion = 51;
+const FBC_VERSION = "4.63-Lilian-20231118153800";
+const settingsVersion = 55;
 
 const fbcChangelog = `${FBC_VERSION}
-- R95 compatibility
-- removed mass timer lock expiry as the game itself now expires all locks at once
-- fixed BCX API hooks
-- disabled browser autocomplete for IM search input
+- R98 compatibility
+- linked chat embeds to the trusted origins for 3rd party content
 
-4.46
-- updated allow listed domains for chat embeds to include new tenor subdomain
+4.62
+- added a patch to prevent the game from processing serversends while the game does not have connection with the server
+- fixes towards a rare error related to ArousalSettings not being defined on remote characters
+- removed a duplicate hello message on initial load when automatically rejoining a chatroom
+- removed FBC's duplicate implementation of client-side rate limiting
 
-4.45
-- removed hand-gag handling; this will be handled better by LSCG in the near future
+4.61
+- fix a bug where the animation can get in a bad state when presented with an invalid expression
+
+4.60
+- add ability to define target for /versions command (dDeepLb)
+- preserve formatting in IM messages (dDeepLb)
 `;
 
 /*
@@ -68,7 +73,7 @@ var bcModSdk=function(){"use strict";const e="1.1.0";function o(e){alert("Mod ER
 async function ForBetterClub() {
 	"use strict";
 
-	const SUPPORTED_GAME_VERSIONS = ["R95"];
+	const SUPPORTED_GAME_VERSIONS = ["R98"];
 	const CAPABILITIES = /** @type {const} */ (["clubslave"]);
 
 	const w = window;
@@ -137,6 +142,7 @@ async function ForBetterClub() {
 	const EMBED_TYPE = /** @type {const} */ ({
 		Image: "img",
 		None: "",
+		Untrusted: "none-img",
 	});
 
 	/** @type {Record<"BCX" | "EBCH" | "MBS" | "LSCG", "none" | "external" | "stable" | "devel" | "fusam">} */
@@ -154,6 +160,9 @@ async function ForBetterClub() {
 
 	/** @type {{ level: "error" | "warn" | "info" | "debug", message: string }[]} */
 	const pastLogs = new Array(100);
+
+	/** @type {Map<string, "allowed" | "denied">} */
+	const sessionCustomOrigins = new Map();
 
 	/** @type {Map<number, BCECharacterState>} */
 	const characterStates = new Map();
@@ -179,6 +188,7 @@ async function ForBetterClub() {
 	 */
 	// @ts-ignore -- this is fully initialized in loadSettings
 	let fbcSettings = {};
+	let postSettingsHasRun = false;
 
 	const defaultSettings = /** @type {const} */ ({
 		animationEngine: {
@@ -814,6 +824,16 @@ async function ForBetterClub() {
 			description:
 				"Disables drawing on the screen. This is useful for preventing accidental drawing.",
 		},
+		customContentDomainCheck: {
+			label: "Prompt before loading content from a 3rd party domain",
+			value: true,
+			sideEffects: (newValue) => {
+				debug("customContentDomainCheck", newValue);
+			},
+			category: "misc",
+			description:
+				"Show a confirmation prompt before allowing content from a 3rd party domain to be loaded.",
+		},
 		fpsCounter: {
 			label: "Show FPS counter",
 			value: false,
@@ -937,7 +957,7 @@ async function ForBetterClub() {
 	}
 
 	function settingsLoaded() {
-		return Object.keys(fbcSettings).length > 0;
+		return postSettingsHasRun;
 	}
 
 	const bceSettingKey = () => `bce.settings.${Player?.AccountName}`;
@@ -949,7 +969,7 @@ async function ForBetterClub() {
 		await waitFor(() => !!Player?.AccountName);
 		const key = bceSettingKey();
 		debug("loading settings");
-		if (!settingsLoaded()) {
+		if (Object.keys(fbcSettings).length === 0) {
 			let settings = /** @type {typeof fbcSettings} */ (
 				JSON.parse(localStorage.getItem(key))
 			);
@@ -1031,6 +1051,7 @@ async function ForBetterClub() {
 		if (typeof Player.CanChange === "undefined") {
 			Player.CanChange = Player.CanChangeOwnClothes;
 		}
+		postSettingsHasRun = true;
 	}
 
 	// ICONS
@@ -1178,7 +1199,7 @@ async function ForBetterClub() {
 					AppearanceLoad: "4360C485",
 					AppearanceRun: "0BBDEE59",
 					CharacterAppearanceWardrobeLoad: "A5B63A03",
-					CharacterBuildDialog: "918170E7",
+					CharacterBuildDialog: "85F79C6E",
 					CharacterCompressWardrobe: "8D3B1AB1",
 					CharacterDecompressWardrobe: "A9FD29CC",
 					CharacterDelete: "398D1116",
@@ -1189,14 +1210,16 @@ async function ForBetterClub() {
 					CharacterReleaseTotal: "396640D1",
 					CharacterSetActivePose: "5BCD2A9E",
 					CharacterSetCurrent: "F46573D8",
-					CharacterSetFacialExpression: "2A6526BC",
-					ChatRoomCharacterItemUpdate: "041F9B91",
+					CharacterSetFacialExpression: "F8272D7A",
+					ChatAdminRoomCustomizationClick: "E194A605",
+					ChatAdminRoomCustomizationProcess: "B33D6388",
+					ChatRoomCharacterItemUpdate: "263DB2F0",
 					ChatRoomCharacterUpdate: "9D0EEA39",
-					ChatRoomClearAllElements: "C49AA2C1",
-					ChatRoomClick: "79E651EB",
+					ChatRoomClearAllElements: "14DAAB05",
+					ChatRoomClick: "120B0F0B",
 					ChatRoomCreateElement: "9A3FD548",
 					ChatRoomCurrentTime: "A462DD3A",
-					ChatRoomDrawBackground: "597B062C",
+					ChatRoomDrawBackground: "AEE70C4E",
 					ChatRoomDrawCharacterOverlay: "06FB4CC3",
 					ChatRoomHTMLEntities: "0A7ADB1D",
 					ChatRoomKeyDown: "B4BFDB0C",
@@ -1205,7 +1228,7 @@ async function ForBetterClub() {
 					ChatRoomMessageDisplay: "C7053411",
 					ChatRoomRegisterMessageHandler: "C432923A",
 					ChatRoomResize: "653445D7",
-					ChatRoomRun: "77FAE23C",
+					ChatRoomRun: "6F4C7B4D",
 					ChatRoomSendChat: "7F540ED0",
 					ChatRoomStart: "9B822A9A",
 					CommandExecute: "5C948CC3",
@@ -1213,11 +1236,11 @@ async function ForBetterClub() {
 					CommonClick: "1F6DF7CB",
 					CommonColorIsValid: "390A2CE4",
 					CommonSetScreen: "E2AC00F4",
-					CraftingClick: "FCAFCC5D",
-					CraftingConvertSelectedToItem: "B3F4D559",
-					CraftingRun: "E6488E16",
+					CraftingClick: "FF76A404",
+					CraftingConvertSelectedToItem: "E827EA50",
+					CraftingRun: "5BE6E125",
 					DialogClick: "D0FA2714",
-					DialogDraw: "DC5D416C",
+					DialogDraw: "8A814153",
 					DialogDrawItemMenu: "FCE556C2",
 					DialogLeave: "C37553DC",
 					DrawBackNextButton: "9AF4BA37",
@@ -1226,19 +1249,19 @@ async function ForBetterClub() {
 					DrawCheckbox: "00FD87EB",
 					DrawImageEx: "3D3D74F5",
 					DrawImageResize: "8CF55F04",
-					DrawItemPreview: "A27E9228",
-					DrawProcess: "E60F65B5",
+					DrawItemPreview: "58E9BA94",
+					DrawProcess: "BC1E9396",
 					DrawText: "C1BF0F50",
 					DrawTextFit: "F9A1B11E",
-					ElementCreateInput: "562F83D4",
-					ElementCreateTextArea: "8721B388",
+					ElementCreateInput: "60D2EA73",
+					ElementCreateTextArea: "81019A58",
 					ElementIsScrolledToEnd: "1CC4FE11",
 					ElementPosition: "CC4E3C82",
 					ElementRemove: "60809E60",
 					ElementScrollToEnd: "1AC45575",
 					ElementValue: "4F26C62F",
 					FriendListShowBeep: "6C0449BB",
-					GameRun: "3525631A",
+					GameRun: "ED65B730",
 					GLDrawResetCanvas: "81214642",
 					InformationSheetRun: "E248ADC7",
 					InventoryGet: "E666F671",
@@ -1268,14 +1291,15 @@ async function ForBetterClub() {
 					RelogExit: "2DFB2DAD",
 					ServerAccountBeep: "F16771D4",
 					ServerAppearanceBundle: "4D069622",
-					ServerAppearanceLoadFromBundle: "FB794E30",
+					ServerAppearanceLoadFromBundle: "C9F5FFAC",
 					ServerClickBeep: "3E6277BE",
 					ServerConnect: "845E50A6",
 					ServerDisconnect: "06C1A6B0",
 					ServerInit: "FEC6457F",
 					ServerOpenFriendList: "FA8D3CDE",
-					ServerSend: "90A61F57",
-					SkillGetWithRatio: "16620445",
+					ServerSend: "D356D537",
+					ServerSendQueueProcess: "BD4277AC",
+					SkillGetWithRatio: "3EB4BC45",
 					SpeechGarble: "9D669F73",
 					SpeechGarbleByGagLevel: "5F6E16C8",
 					SpeechGetTotalGagLevel: "C55B705A",
@@ -1283,13 +1307,15 @@ async function ForBetterClub() {
 					StruggleFlexibilityCheck: "727CE05B",
 					StruggleFlexibilityProcess: "278D7285",
 					StruggleLockPickDraw: "2F1F603B",
-					StruggleMinigameHandleExpression: "0BFDB2A7",
+					StruggleMinigameHandleExpression: "B6E4A1A0",
+					StruggleMinigameStop: "206F85E7",
 					StruggleStrengthProcess: "D20CF698",
 					TextGet: "4DDE5794",
 					TextLoad: "ADF7C890",
-					TimerInventoryRemove: "338FBCC6",
+					TimerInventoryRemove: "1FA771FB",
 					TimerProcess: "52458C63",
 					TitleExit: "F13F533C",
+					ValidationSanitizeProperties: "C6A54638",
 					WardrobeClick: "E96F7F63",
 					WardrobeExit: "EE83FF29",
 					WardrobeFastLoad: "38627DC2",
@@ -1600,6 +1626,29 @@ async function ForBetterClub() {
 		}
 	};
 
+	// Delay game processes until registration is complete
+	/** @type {"init" | "enable" | "disable"} */
+	let funcsRegistered = "init";
+	SDK.hookFunction("LoginResponse", HOOK_PRIORITIES.Top, (args, next) => {
+		if (funcsRegistered === "init") {
+			funcsRegistered = "disable";
+		}
+		return next(args);
+	});
+	SDK.hookFunction("GameRun", HOOK_PRIORITIES.Top, (args, next) => {
+		if (funcsRegistered === "disable") {
+			requestAnimationFrame(GameRun);
+			return null;
+		}
+		return next(args);
+	});
+
+	(async function () {
+		await waitFor(() => !!w.FUSAM?.present);
+		debug("FUSAM present, registering debug methods");
+		w.FUSAM.registerDebugMethod("FBC", fbcDebug);
+	})();
+
 	await registerFunction(functionIntegrityCheck, "functionIntegrityCheck");
 	registerFunction(bceStyles, "bceStyles");
 	registerFunction(commonPatches, "commonPatches");
@@ -1642,7 +1691,9 @@ async function ForBetterClub() {
 	registerFunction(itemAntiCheat, "itemAntiCheat");
 	registerFunction(leashFix, "leashFix");
 	registerFunction(hookBCXAPI, "hookBCXAPI");
+	registerFunction(customContentDomainCheck, "customContentDomainCheck");
 	registerFunction(revampLilian, "revampLilian");
+	funcsRegistered = "enable";
 
 	// Post ready when in a chat room
 	await fbcNotify(`For Better Club v${w.FBC_VERSION} Loaded`);
@@ -1806,6 +1857,29 @@ async function ForBetterClub() {
 						data.copyWithin(1, 0, idx);
 						data[0] = item;
 					}
+				}
+				return next(args);
+			}
+		);
+
+		// Send responses immediately
+		SDK.hookFunction(
+			"ServerSend",
+			HOOK_PRIORITIES.AddBehaviour,
+			(args, next) => {
+				const ret = next(args);
+				ServerSendQueueProcess();
+				return ret;
+			}
+		);
+
+		// Prevent processing of sent messages when disconnected
+		SDK.hookFunction(
+			"ServerSendQueueProcess",
+			HOOK_PRIORITIES.OverrideBehaviour,
+			(args, next) => {
+				if (!ServerIsConnected) {
+					return null;
 				}
 				return next(args);
 			}
@@ -2170,33 +2244,54 @@ async function ForBetterClub() {
 				Action: async (_, _command, args) => {
 					const [target] = args;
 					/** @type {Character} */
-					let targetMember = null;
+					let targetCharacter = null;
 					if (!target) {
-						targetMember = Player;
+						targetCharacter = Player;
 					} else {
-						targetMember = Character.find(
+						targetCharacter = Character.find(
 							(c) => c.MemberNumber === parseInt(target)
 						);
 					}
-					if (!targetMember) {
+					if (!targetCharacter) {
 						logInfo("Could not find member", target);
 						return;
 					}
-					const includeBinds = window.confirm(displayText("Include binds?"));
-					const includeLocks =
-						includeBinds && window.confirm(displayText("Include locks?"));
-					const includeBase = window.confirm(
-						displayText("Include height, body type, hair, etc?")
-					);
+					const [bindSubmit] = await showAsyncModal({
+						prompt: displayText("Include binds?"),
+						buttons: {
+							cancel: "No",
+							submit: "Yes",
+						},
+					});
+					const includeBinds = bindSubmit === "submit";
+					let includeLocks = false;
+					if (includeBinds) {
+						const [lockSubmit] = await showAsyncModal({
+							prompt: displayText("Include locks?"),
+							buttons: {
+								cancel: "No",
+								submit: "Yes",
+							},
+						});
+						includeLocks = lockSubmit === "submit";
+					}
+					const [baseSubmit] = await showAsyncModal({
+						prompt: displayText("Include height, body type, hair, etc?"),
+						buttons: {
+							cancel: "No",
+							submit: "Yes",
+						},
+					});
+					const includeBase = baseSubmit === "submit";
 
-					const base = targetMember.Appearance.filter(
+					const base = targetCharacter.Appearance.filter(
 						(a) => a.Asset.Group.IsDefault && !a.Asset.Group.Clothing
 					);
-					const clothes = targetMember.Appearance.filter(
+					const clothes = targetCharacter.Appearance.filter(
 						(a) =>
 							a.Asset.Group.Category === "Appearance" && a.Asset.Group.Clothing
 					);
-					const binds = targetMember.Appearance.filter(
+					const binds = targetCharacter.Appearance.filter(
 						(a) =>
 							a.Asset.Group.Category === "Item" &&
 							!["ItemNeck", "ItemNeckAccessories"].includes(
@@ -2233,13 +2328,25 @@ async function ForBetterClub() {
 						};
 					});
 
-					const targetName = targetMember.IsPlayer()
+					const targetName = targetCharacter.IsPlayer()
 						? "yourself"
-						: CharacterNickname(targetMember);
+						: CharacterNickname(targetCharacter);
 
-					await navigator.clipboard.writeText(
-						LZString.compressToBase64(JSON.stringify(looks))
-					);
+					const exportString = LZString.compressToBase64(JSON.stringify(looks));
+
+					showAsyncModal({
+						prompt: displayText(displayText("Copy the looks string below")),
+						input: {
+							initial: exportString,
+							readonly: true,
+							type: "textarea",
+						},
+						buttons: {
+							submit: "Done",
+						},
+					});
+
+					await navigator.clipboard.writeText(exportString);
 					fbcChatNotify(
 						displayText(`Exported looks for $TargetName copied to clipboard`, {
 							$TargetName: targetName,
@@ -2262,61 +2369,74 @@ async function ForBetterClub() {
 						return;
 					}
 
-					const bundleString = window.prompt(
-						displayText("Paste your looks here")
-					);
-					if (!bundleString) {
-						fbcChatNotify(displayText("No looks string provided"));
-						return;
-					}
-					try {
-						const bundle = /** @type {ItemBundle[]} */ (
-							bundleString.startsWith("[")
-								? JSON.parse(bundleString)
-								: JSON.parse(LZString.decompressFromBase64(bundleString))
-						);
-
-						if (
-							!Array.isArray(bundle) ||
-							bundle.length === 0 ||
-							!bundle[0].Group
-						) {
-							throw new Error("Invalid bundle");
-						}
-
-						// Keep items you cannot unlock in your appearance
-						for (const item of Player.Appearance) {
-							if (item.Property?.LockedBy && !DialogCanUnlock(Player, item)) {
-								/** @type {ItemBundle} */
-								const itemBundle = {
-									Group: item.Asset.Group.Name,
-									Name: item.Asset.Name,
-									Color: item.Color,
-									Difficulty: item.Difficulty,
-									Property: item.Property,
-								};
-								const idx = bundle.findIndex(
-									(v) => v.Group === item.Asset.Group.Name
-								);
-								if (idx < 0) {
-									bundle.push(itemBundle);
-								} else {
-									bundle[idx] = itemBundle;
-								}
+					showModal({
+						prompt: displayText("Paste your looks here"),
+						input: {
+							initial: "",
+							readonly: false,
+							type: "textarea",
+						},
+						callback: (act, bundleString) => {
+							if (act !== "submit") {
+								return;
 							}
-						}
-						ServerAppearanceLoadFromBundle(
-							Player,
-							"Female3DCG",
-							bundle,
-							Player.MemberNumber
-						);
-						ChatRoomCharacterUpdate(Player);
-						fbcChatNotify(displayText("Applied looks"));
-					} catch (e) {
-						console.error(e);
-						fbcChatNotify(displayText("Could not parse looks"));
-					}
+							if (!bundleString) {
+								fbcChatNotify(displayText("No looks string provided"));
+								return;
+							}
+							try {
+								const bundle = /** @type {ItemBundle[]} */ (
+									bundleString.startsWith("[")
+										? JSON.parse(bundleString)
+										: JSON.parse(LZString.decompressFromBase64(bundleString))
+								);
+
+								if (
+									!Array.isArray(bundle) ||
+									bundle.length === 0 ||
+									!bundle[0].Group
+								) {
+									throw new Error("Invalid bundle");
+								}
+
+								// Keep items you cannot unlock in your appearance
+								for (const item of Player.Appearance) {
+									if (
+										item.Property?.LockedBy &&
+										!DialogCanUnlock(Player, item)
+									) {
+										/** @type {ItemBundle} */
+										const itemBundle = {
+											Group: item.Asset.Group.Name,
+											Name: item.Asset.Name,
+											Color: item.Color,
+											Difficulty: item.Difficulty,
+											Property: item.Property,
+										};
+										const idx = bundle.findIndex(
+											(v) => v.Group === item.Asset.Group.Name
+										);
+										if (idx < 0) {
+											bundle.push(itemBundle);
+										} else {
+											bundle[idx] = itemBundle;
+										}
+									}
+								}
+								ServerAppearanceLoadFromBundle(
+									Player,
+									"Female3DCG",
+									bundle,
+									Player.MemberNumber
+								);
+								ChatRoomCharacterUpdate(Player);
+								fbcChatNotify(displayText("Applied looks"));
+							} catch (e) {
+								console.error(e);
+								fbcChatNotify(displayText("Could not parse looks"));
+							}
+						},
+					});
 				},
 			},
 			{
@@ -2385,22 +2505,7 @@ async function ForBetterClub() {
 					const [, , ...message] = command.split(" ");
 					const msg = message?.join(" ");
 					/** @type {Character[]} */
-					let targetMembers = [];
-					if (/^\d+$/u.test(target)) {
-						targetMembers = [
-							ChatRoomCharacter.find(
-								(c) => c.MemberNumber === parseInt(target)
-							),
-						];
-					} else {
-						targetMembers = ChatRoomCharacter.filter(
-							(c) =>
-								CharacterNickname(c).split(" ")[0]?.toLowerCase() ===
-									target?.toLowerCase() ||
-								c.Name.split(" ")[0].toLowerCase() === target?.toLowerCase()
-						);
-					}
-					targetMembers = targetMembers.filter((c) => c);
+					const targetMembers = findDrawnCharacters(target);
 					if (!target || !targetMembers || targetMembers.length === 0) {
 						fbcChatNotify(`Whisper target not found: ${target}`);
 					} else if (targetMembers.length > 1) {
@@ -2435,47 +2540,52 @@ async function ForBetterClub() {
 			{
 				Tag: "versions",
 				Description: displayText(
-					"show versions of the club, FBC, and BCX in use by players"
+					"show versions of the club, FBC, BCX and other mods in use by players"
 				),
-				Action: () => {
-					/** @type {(chars: Character[]) => string} */
-					const versionOutput = (chars) =>
-						chars
-							.map(
-								(a) =>
-									`${CharacterNickname(a)} (${a.MemberNumber}) club ${
-										a.OnlineSharedSettings?.GameVersion
-									}${
-										w.bcx?.getCharacterVersion(a.MemberNumber)
-											? ` BCX ${bcx.getCharacterVersion(a.MemberNumber)}`
-											: ""
-									}${
-										a.FBC
-											? `\nFBC v${
-													a.FBC
-											  } Alt Arousal: ${a.BCEArousal?.toString()}`
-											: ""
-									}${
-										a.FBCOtherAddons &&
-										a.FBCOtherAddons.some(
-											(m) => !["BCX", "FBC"].includes(m.name)
-										)
-											? `\nOther Addons:\n- ${a.FBCOtherAddons.filter(
-													(m) => !["BCX", "FBC"].includes(m.name)
-											  )
-													.map(
-														(m) =>
-															`${m.name} v${m.version} ${m.repository ?? ""}`
-													)
-													.join("\n- ")}`
-											: ""
-									}`
+				Action: (_, _command, args) => {
+					/** @type {(character: Character) => string} */
+					const getCharacterModInfo = (character) =>
+						`${CharacterNickname(character)} (${character.MemberNumber}) club ${
+							character.OnlineSharedSettings?.GameVersion
+						}${
+							w.bcx?.getCharacterVersion(character.MemberNumber)
+								? ` BCX ${bcx.getCharacterVersion(character.MemberNumber)}`
+								: ""
+						}${
+							character.FBC
+								? `\nFBC v${
+										character.FBC
+								  } Alt Arousal: ${character.BCEArousal?.toString()}`
+								: ""
+						}${
+							character.FBCOtherAddons &&
+							character.FBCOtherAddons.some(
+								(mod) => !["BCX", "FBC"].includes(mod.name)
 							)
-							.filter((a) => a)
-							.join("\n\n");
+								? `\nOther Addons:\n- ${character.FBCOtherAddons.filter(
+										(mod) => !["BCX", "FBC"].includes(mod.name)
+								  )
+										.map(
+											(mod) =>
+												`${mod.name} v${mod.version} ${mod.repository ?? ""}`
+										)
+										.join("\n- ")}`
+								: ""
+						}`;
 
-					fbcChatNotify(versionOutput(ChatRoomCharacterDrawlist));
-					debug(versionOutput(ChatRoomCharacter));
+					const targets =
+						args.length > 0 ? findDrawnCharacters(args[0], true) : [];
+
+					const printList =
+						targets.length > 0 ? targets : ChatRoomCharacterDrawlist;
+
+					const versionOutput = printList
+						.map(getCharacterModInfo)
+						.filter((info) => info)
+						.join("\n\n");
+
+					fbcChatNotify(versionOutput);
+					debug(versionOutput);
 				},
 			},
 		];
@@ -2918,7 +3028,7 @@ async function ForBetterClub() {
 				if (fbcSettings.lockpick && w.StruggleLockPickOrder) {
 					const seed = parseInt(StruggleLockPickOrder.join(""));
 					const rand = newRand(seed);
-					const threshold = SkillGetWithRatio("LockPicking") / 20;
+					const threshold = SkillGetWithRatio(Player, "LockPicking") / 20;
 					const hints = StruggleLockPickOrder.map((a) => {
 						const r = rand();
 						return r < threshold ? a : false;
@@ -3339,6 +3449,7 @@ async function ForBetterClub() {
 		.bce-message {
 			padding: 0.2em 0.4em;
 			position: relative;
+			white-space: pre-wrap;
 		}
 		.bce-message::before {
 			content: attr(data-time);
@@ -3755,24 +3866,24 @@ async function ForBetterClub() {
 		patchFunction(
 			"StruggleMinigameHandleExpression",
 			{
-				'CharacterSetFacialExpression(Player, "Blush", "High");':
-					'CharacterSetFacialExpression(Player, "Blush", "High", 10);',
-				'CharacterSetFacialExpression(Player, "Blush", "Medium");':
-					'CharacterSetFacialExpression(Player, "Blush", "Medium", 10);',
-				'CharacterSetFacialExpression(Player, "Blush", "Low");':
-					'CharacterSetFacialExpression(Player, "Blush", "Low", 10);',
-				'CharacterSetFacialExpression(Player, "Fluids", "DroolMessy");':
-					'CharacterSetFacialExpression(Player, "Fluids", "DroolMessy", 10);',
-				'CharacterSetFacialExpression(Player, "Eyes2", "Closed");':
-					'CharacterSetFacialExpression(Player, "Eyes2", "Closed", 10);',
-				'CharacterSetFacialExpression(Player, "Eyes", "Dazed");':
-					'CharacterSetFacialExpression(Player, "Eyes", "Dazed", 10);',
-				'CharacterSetFacialExpression(Player, "Eyebrows", "Angry");':
-					'CharacterSetFacialExpression(Player, "Eyebrows", "Angry", 10);',
-				'CharacterSetFacialExpression(Player, "Eyebrows", null);':
-					'CharacterSetFacialExpression(Player, "Eyebrows", null, 10);',
+				'");': '", 3);',
 			},
 			"Resetting blush, eyes, and eyebrows after struggling"
+		);
+
+		SDK.hookFunction(
+			"StruggleMinigameStop",
+			HOOK_PRIORITIES.ModifyBehaviourMedium,
+			(args, next) => {
+				if (bceAnimationEngineEnabled()) {
+					StruggleExpressionStore = null;
+					resetExpressionQueue(
+						[GAME_TIMED_EVENT_TYPE],
+						[MANUAL_OVERRIDE_EVENT_TYPE]
+					);
+				}
+				return next(args);
+			}
 		);
 
 		if (!w.bce_ArousalExpressionStages) {
@@ -3824,6 +3935,7 @@ async function ForBetterClub() {
 
 		const AUTOMATED_AROUSAL_EVENT_TYPE = "AutomatedByArousal",
 			DEFAULT_EVENT_TYPE = "DEFAULT",
+			GAME_TIMED_EVENT_TYPE = "GameTimer",
 			MANUAL_OVERRIDE_EVENT_TYPE = "ManualOverride",
 			POST_ORGASM_EVENT_TYPE = "PostOrgasm";
 
@@ -3836,6 +3948,9 @@ async function ForBetterClub() {
 			lastUniqueId = (lastUniqueId + 1) % (Number.MAX_SAFE_INTEGER - 1);
 			return lastUniqueId;
 		}
+
+		/** @type {Partial<Record<'Eyes' | 'Eyes2' | 'Eyebrows' | 'Mouth' | 'Fluids' | 'Emoticon' | 'Blush' | 'Pussy', string>>} */
+		const manualComponents = {};
 
 		/** @type {(evt: ExpressionEvent) => void} */
 		function pushEvent(evt) {
@@ -5147,6 +5262,44 @@ async function ForBetterClub() {
 		};
 		let PreviousDirection = ArousalMeterDirection.Up;
 
+		/**
+		 * @param {string[]} types Types to reset
+		 * @param {string[]} skippedTypes Types to skip resetting in addition to automated arousal events
+		 */
+		function resetExpressionQueue(types, skippedTypes = []) {
+			delete Player.ExpressionQueue;
+			bceExpressionsQueue.push(
+				...bceExpressionsQueue
+					.splice(0, bceExpressionsQueue.length)
+					.map((e) => {
+						if (
+							types.includes(e.Type) ||
+							(e.Duration <= 0 &&
+								e.Type !== AUTOMATED_AROUSAL_EVENT_TYPE &&
+								!skippedTypes.includes(e.Type))
+						) {
+							delete e.Expression;
+						}
+						return e;
+					})
+			);
+			// Restore manual overrides, if manual not in types
+			if (!types.includes(MANUAL_OVERRIDE_EVENT_TYPE)) {
+				pushEvent({
+					Type: MANUAL_OVERRIDE_EVENT_TYPE,
+					Duration: -1,
+					Expression: Object.entries(manualComponents).reduce(
+						(a, [k, v]) => ({ ...a, [k]: [{ Expression: v }] }),
+						{}
+					),
+				});
+			} else {
+				for (const k of Object.keys(manualComponents)) {
+					delete manualComponents[k];
+				}
+			}
+		}
+
 		Commands.push({
 			Tag: "r",
 			Description: displayText(
@@ -5154,16 +5307,7 @@ async function ForBetterClub() {
 			),
 			Action: (args) => {
 				if (args.length === 0 || args === "all") {
-					bceExpressionsQueue.push(
-						...bceExpressionsQueue
-							.splice(0, bceExpressionsQueue.length)
-							.map((e) => {
-								if (e.Type === MANUAL_OVERRIDE_EVENT_TYPE || e.Duration <= 0) {
-									delete e.Expression;
-								}
-								return e;
-							})
-					);
+					resetExpressionQueue([MANUAL_OVERRIDE_EVENT_TYPE]);
 					fbcChatNotify(displayText("Reset all expressions"));
 				} else {
 					const component = `${args[0].toUpperCase()}${args
@@ -5276,14 +5420,43 @@ async function ForBetterClub() {
 		patchFunction(
 			"TimerInventoryRemove",
 			{
-				CharacterSetFacialExpression: `if (!bceAnimationEngineEnabled()) CharacterSetFacialExpression`,
+				"CharacterSetFacialExpression(C, C.ExpressionQueue[0].Group, C.ExpressionQueue[0].Expression, undefined, undefined, true);": `if (bceAnimationEngineEnabled()) {
+					fbcPushEvent({
+						Type: "${GAME_TIMED_EVENT_TYPE}",
+						Duration: -1,
+						Expression: {
+							[C.ExpressionQueue[0].Group]: [{ Expression: C.ExpressionQueue[0].Expression, Duration: -1 }]
+						}
+					})
+				} else {
+					CharacterSetFacialExpression(C, C.ExpressionQueue[0].Group, C.ExpressionQueue[0].Expression, undefined, undefined, true);
+				}`,
 			},
-			"Facial features resetting after item or struggle events"
+			"Game's timed expressions are not hooked to FBC's animation engine"
+		);
+
+		patchFunction(
+			"ValidationSanitizeProperties",
+			{
+				"delete property.Expression;": `delete property.Expression;
+				if (bceAnimationEngineEnabled()) {
+					if (item?.Asset?.Group?.Name) {
+						CharacterSetFacialExpression(C, item.Asset.Group.Name, null);
+						console.warn("(FBC) Animation engine acknowledged validation-based expression removal for face component", item)
+					} else {
+						console.warn("Unable to determine asset group name for item", item);
+					}
+				}`,
+			},
+			"Prevent animation engine from getting into an endless loop when another addon includes an invalid expression"
 		);
 
 		SDK.hookFunction(
 			"CharacterSetFacialExpression",
 			HOOK_PRIORITIES.OverrideBehaviour,
+			/**
+			 * @param {[Character, string, string | null, number, string | null]} args
+			 */
 			(args, next) => {
 				// eslint-disable-next-line prefer-const
 				let [C, AssetGroup, Expression, Timer, Color] = args;
@@ -5296,15 +5469,19 @@ async function ForBetterClub() {
 				) {
 					return next(args);
 				}
+
 				const duration =
 						typeof Timer === "number" && Timer > 0 ? Timer * 1000 : -1,
+					/** @type {Record<string, ExpressionStage[]>} */
 					e = {},
 					types = [AssetGroup];
+
 				if (AssetGroup === "Eyes") {
 					types.push("Eyes2");
 				} else if (AssetGroup === "Eyes1") {
 					types[0] = "Eyes";
 				}
+
 				if (
 					!Color ||
 					!isStringOrStringArray(Color) ||
@@ -5313,15 +5490,19 @@ async function ForBetterClub() {
 					// eslint-disable-next-line no-undefined
 					Color = undefined;
 				}
+
 				for (const t of types) {
 					e[t] = [{ Expression, Duration: duration, Color }];
+					if (duration < 0) {
+						manualComponents[t] = Expression;
+					}
 				}
+
 				const evt = {
 					Type: MANUAL_OVERRIDE_EVENT_TYPE,
 					Duration: duration,
 					Expression: e,
 				};
-				// @ts-ignore
 				pushEvent(evt);
 				return CustomArousalExpression();
 			}
@@ -5397,6 +5578,8 @@ async function ForBetterClub() {
 				}
 			}
 		);
+
+		resetExpressionQueue([MANUAL_OVERRIDE_EVENT_TYPE, GAME_TIMED_EVENT_TYPE]);
 
 		// This is called once per interval to check for expression changes
 		// eslint-disable-next-line complexity
@@ -6089,6 +6272,7 @@ async function ForBetterClub() {
 			HOOK_PRIORITIES.AddBehaviour,
 			(args, next) => {
 				const C = CharacterGetCurrent();
+				const ret = next(args);
 				if (
 					DialogMenuMode === "items" &&
 					isCharacter(C) &&
@@ -6127,7 +6311,7 @@ async function ForBetterClub() {
 						);
 					}
 				}
-				return next(args);
+				return ret;
 			}
 		);
 
@@ -6436,6 +6620,10 @@ async function ForBetterClub() {
 
 	/** @type {(target?: number, requestReply?: boolean) => void} */
 	function sendHello(target = null, requestReply = false) {
+		if (!settingsLoaded()) {
+			// Don't send hello until settings are loaded
+			return;
+		}
 		/** @type {ChatMessage} */
 		const message = {
 			Type: HIDDEN,
@@ -6485,6 +6673,88 @@ async function ForBetterClub() {
 	async function hiddenMessageHandler() {
 		await waitFor(() => ServerSocket && ServerIsConnected);
 
+		/**
+		 * @param {ChatMessage | BCEChatMessage} data
+		 */
+		function parseBCEMessage(data) {
+			/** @type {BCEMessage} */
+			let message = {
+				type: null,
+				version: null,
+			};
+			if (Array.isArray(data.Dictionary)) {
+				message = data.Dictionary?.find((t) => t.message)?.message || message;
+			} else {
+				message = data.Dictionary?.message || message;
+			}
+			return message;
+		}
+
+		/**
+		 * @param {Character} sender
+		 * @param {BCEMessage} message
+		 * @param {boolean} [deferred]
+		 */
+		function processBCEMessage(sender, message, deferred = false) {
+			debug(
+				"Processing BCE message",
+				sender,
+				message,
+				deferred ? "(deferred)" : ""
+			);
+			if (!sender?.ArousalSettings && !deferred) {
+				/**
+				 * FBC's socket listener may in some cases run before the game's socket listener initializes the character
+				 * This is an attempt to fix the issue by ensuring the message gets processed at the end of the current
+				 * event loop.
+				 */
+				logWarn(
+					"No arousal settings found for",
+					sender,
+					"; deferring execution to microtask."
+				);
+				queueMicrotask(() => {
+					processBCEMessage(sender, message, true);
+				});
+				return;
+			}
+
+			if (!sender?.ArousalSettings) {
+				logWarn("No arousal settings found for", sender);
+			}
+
+			switch (message.type) {
+				case MESSAGE_TYPES.Hello:
+					sender.FBC = message.version;
+					sender.BCEArousal = message.alternateArousal || false;
+					sender.BCEArousalProgress =
+						message.progress || sender.ArousalSettings?.Progress || 0;
+					sender.BCEEnjoyment = message.enjoyment || 1;
+					sender.BCECapabilities = message.capabilities;
+					if (message.replyRequested) {
+						sendHello(sender.MemberNumber);
+					}
+					sender.FBCOtherAddons = message.otherAddons;
+					break;
+				case MESSAGE_TYPES.ArousalSync:
+					sender.BCEArousal = message.alternateArousal || false;
+					sender.BCEArousalProgress = message.progress || 0;
+					sender.BCEEnjoyment = message.enjoyment || 1;
+					break;
+				case MESSAGE_TYPES.Activity:
+					// Sender is owner and player is not already wearing a club slave collar
+					if (
+						sender.MemberNumber === Player.Ownership?.MemberNumber &&
+						!Player.Appearance.some((a) => a.Asset.Name === "ClubSlaveCollar")
+					) {
+						bceStartClubSlave();
+					}
+					break;
+				default:
+					break;
+			}
+		}
+
 		registerSocketListener(
 			"ChatRoomMessage",
 			// eslint-disable-next-line complexity
@@ -6500,49 +6770,8 @@ async function ForBetterClub() {
 					if (!sender) {
 						return;
 					}
-					/** @type {BCEMessage} */
-					let message = {
-						type: null,
-						version: null,
-					};
-					if (Array.isArray(data.Dictionary)) {
-						message =
-							data.Dictionary?.find((t) => t.message)?.message || message;
-					} else {
-						message = data.Dictionary?.message || message;
-					}
-					switch (message.type) {
-						case MESSAGE_TYPES.Hello:
-							sender.FBC = message.version;
-							sender.BCEArousal = message.alternateArousal || false;
-							sender.BCEArousalProgress =
-								message.progress || sender.ArousalSettings.Progress || 0;
-							sender.BCEEnjoyment = message.enjoyment || 1;
-							sender.BCECapabilities = message.capabilities;
-							if (message.replyRequested) {
-								sendHello(sender.MemberNumber);
-							}
-							sender.FBCOtherAddons = message.otherAddons;
-							break;
-						case MESSAGE_TYPES.ArousalSync:
-							sender.BCEArousal = message.alternateArousal || false;
-							sender.BCEArousalProgress = message.progress || 0;
-							sender.BCEEnjoyment = message.enjoyment || 1;
-							break;
-						case MESSAGE_TYPES.Activity:
-							// Sender is owner and player is not already wearing a club slave collar
-							if (
-								sender.MemberNumber === Player.Ownership?.MemberNumber &&
-								!Player.Appearance.some(
-									(a) => a.Asset.Name === "ClubSlaveCollar"
-								)
-							) {
-								bceStartClubSlave();
-							}
-							break;
-						default:
-							break;
-					}
+					const message = parseBCEMessage(data);
+					processBCEMessage(sender, message);
 				}
 			}
 		);
@@ -8885,7 +9114,7 @@ async function ForBetterClub() {
 				CurrentScreen === "ChatRoom" &&
 				document.getElementById("TextAreaChatLog")?.offsetParent !== null
 			) {
-				return [5, 905, 60, 60];
+				return [5, 865, 60, 60];
 			}
 			return [70, 905, 60, 60];
 		}
@@ -9108,9 +9337,9 @@ async function ForBetterClub() {
 		}
 	}
 
-	/** @type {(url: URL) => "img" | ""} */
+	/** @type {(url: URL) => "img" | "" | "none-img"} */
 	function bceAllowedToEmbed(url) {
-		if (
+		const isTrustedOrigin =
 			[
 				"cdn.discordapp.com",
 				"media.discordapp.com",
@@ -9121,10 +9350,11 @@ async function ForBetterClub() {
 				"i.redd.it",
 				"puu.sh",
 				"fs.kinkop.eu",
-			].includes(url.host) &&
-			/\/[^/]+\.(png|jpe?g|gif)$/u.test(url.pathname)
-		) {
-			return EMBED_TYPE.Image;
+			].includes(url.host) ||
+			sessionCustomOrigins.get(url.origin) === "allowed";
+
+		if (/\/[^/]+\.(png|jpe?g|gif)$/u.test(url.pathname)) {
+			return isTrustedOrigin ? EMBED_TYPE.Image : EMBED_TYPE.Untrusted;
 		}
 		return EMBED_TYPE.None;
 	}
@@ -9132,6 +9362,7 @@ async function ForBetterClub() {
 	/** @type {(chatMessageElement: Element, scrollToEnd: () => void) => void} */
 	function processChatAugmentsForLine(chatMessageElement, scrollToEnd) {
 		const newChildren = [];
+		let originalText = "";
 		for (const node of chatMessageElement.childNodes) {
 			if (node.nodeType !== Node.TEXT_NODE) {
 				newChildren.push(node);
@@ -9148,6 +9379,9 @@ async function ForBetterClub() {
 			}
 			const contents = node.textContent.trim(),
 				words = [contents];
+
+			originalText += node.textContent;
+
 			for (let i = 0; i < words.length; i++) {
 				// Handle other whitespace
 				const whitespaceIdx = words[i].search(/[\s\r\n]/u);
@@ -9168,7 +9402,9 @@ async function ForBetterClub() {
 					/** @type {HTMLElement | Text} */
 					let domNode = null;
 					const linkNode = document.createElement("a");
-					switch (bceAllowedToEmbed(url)) {
+					newChildren.push(linkNode);
+					const embedType = bceAllowedToEmbed(url);
+					switch (embedType) {
 						case EMBED_TYPE.Image:
 							{
 								const imgNode = document.createElement("img");
@@ -9182,13 +9418,60 @@ async function ForBetterClub() {
 							break;
 						default:
 							domNode = document.createTextNode(url.href);
+							if (embedType !== EMBED_TYPE.None) {
+								const promptTrust = document.createElement("a");
+								promptTrust.onclick = (e) => {
+									e.preventDefault();
+									e.stopPropagation();
+									// eslint-disable-next-line prefer-destructuring
+									const target = /** @type {HTMLAnchorElement} */ (e.target);
+									showModal({
+										prompt: displayText(
+											"Do you want to add $origin to trusted origins?",
+											{
+												$origin: url.origin,
+											}
+										),
+										callback: (act) => {
+											if (act === "submit") {
+												sessionCustomOrigins.set(url.origin, "allowed");
+												const parent = target.parentElement;
+												parent.removeChild(target);
+												const name = parent.querySelector(".ChatMessageName");
+												parent.innerHTML = "";
+												if (name) {
+													parent.appendChild(name);
+													parent.appendChild(document.createTextNode(" "));
+												}
+												parent.appendChild(
+													document.createTextNode(
+														parent.getAttribute("bce-original-text")
+													)
+												);
+												processChatAugmentsForLine(
+													chatMessageElement,
+													scrollToEnd
+												);
+												debug("updated trusted origins", sessionCustomOrigins);
+											}
+										},
+										buttons: {
+											submit: displayText("Trust this session"),
+										},
+									});
+								};
+								promptTrust.href = "#";
+								promptTrust.title = displayText("Trust this session");
+								promptTrust.textContent = displayText("(embed)");
+								newChildren.push(document.createTextNode(" "));
+								newChildren.push(promptTrust);
+							}
 							break;
 					}
 					linkNode.href = url.href;
 					linkNode.title = url.href;
 					linkNode.target = "_blank";
 					linkNode.appendChild(domNode);
-					newChildren.push(linkNode);
 				} else if (/^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/u.test(words[i])) {
 					const color = document.createElement("span");
 					color.classList.add("bce-color");
@@ -9206,6 +9489,105 @@ async function ForBetterClub() {
 		for (const child of newChildren) {
 			chatMessageElement.appendChild(child);
 		}
+		chatMessageElement.setAttribute("bce-original-text", originalText);
+	}
+
+	function customContentDomainCheck() {
+		const trustedOrigins = ["https://fs.kinkop.eu", "https://i.imgur.com"];
+
+		let open = false;
+		/**
+		 * @param {string} origin
+		 * @param {"image" | "music"} type
+		 */
+		function showCustomContentDomainCheckWarning(origin, type = null) {
+			if (open) {
+				return;
+			}
+			open = true;
+			showModal({
+				prompt: displayText(
+					`Do you want to allow 3rd party ${
+						type ?? "content"
+					} to be loaded from $origin? $trusted`,
+					{
+						$origin: origin,
+						$trusted: trustedOrigins.includes(origin)
+							? displayText("(This origin is trusted by authors of FBC)")
+							: "",
+					}
+				),
+				callback: (act) => {
+					open = false;
+					if (act === "submit") {
+						sessionCustomOrigins.set(origin, "allowed");
+					} else if (act === "cancel") {
+						sessionCustomOrigins.set(origin, "denied");
+					}
+				},
+				buttons: {
+					cancel: displayText("Deny for session"),
+					submit: displayText("Allow for session"),
+				},
+			});
+		}
+
+		SDK.hookFunction(
+			"ChatAdminRoomCustomizationProcess",
+			HOOK_PRIORITIES.OverrideBehaviour,
+			/**
+			 * @param {[{ ImageURL: string, MusicURL: string }]} args
+			 */
+			(args, next) => {
+				if (!fbcSettings.customContentDomainCheck) {
+					return next(args);
+				}
+
+				try {
+					const [{ ImageURL, MusicURL }] = args;
+
+					const imageOrigin = ImageURL && new URL(ImageURL).origin;
+					const musicOrigin = MusicURL && new URL(MusicURL).origin;
+
+					if (imageOrigin && !sessionCustomOrigins.has(imageOrigin)) {
+						showCustomContentDomainCheckWarning(imageOrigin, "image");
+					} else if (musicOrigin && !sessionCustomOrigins.has(musicOrigin)) {
+						showCustomContentDomainCheckWarning(musicOrigin, "music");
+					}
+
+					if (
+						(!ImageURL ||
+							sessionCustomOrigins.get(imageOrigin) === "allowed") &&
+						(!MusicURL || sessionCustomOrigins.get(musicOrigin) === "allowed")
+					) {
+						return next(args);
+					}
+				} catch (_) {
+					// Don't care
+				}
+
+				return null;
+			}
+		);
+
+		SDK.hookFunction(
+			"ChatAdminRoomCustomizationClick",
+			HOOK_PRIORITIES.Observe,
+			(args, next) => {
+				for (const s of [
+					ElementValue("InputImageURL").trim(),
+					ElementValue("InputMusicURL").trim(),
+				]) {
+					try {
+						const url = new URL(s);
+						sessionCustomOrigins.set(url.origin, "allowed");
+					} catch (_) {
+						// Don't care
+					}
+				}
+				return next(args);
+			}
+		);
 	}
 
 	function discreetMode() {
@@ -9273,22 +9655,6 @@ async function ForBetterClub() {
 	}
 
 	function autoStruggle() {
-		const allowAllDialogExpressions = () => {
-			if (!bceAnimationEngineEnabled()) {
-				return;
-			}
-			if (
-				StruggleProgressAuto >= 0 ||
-				StruggleProgressChallenge <= 0 ||
-				!CharacterGetCurrent()?.IsPlayer()
-			) {
-				return;
-			}
-			DialogAllowBlush = true;
-			DialogAllowEyebrows = true;
-			DialogAllowFluids = true;
-		};
-
 		SDK.hookFunction(
 			"StruggleFlexibilityCheck",
 			HOOK_PRIORITIES.OverrideBehaviour,
@@ -9313,11 +9679,9 @@ async function ForBetterClub() {
 			}
 
 			if (StruggleProgressCurrentMinigame === "Strength") {
-				allowAllDialogExpressions();
 				StruggleStrengthProcess(false);
 			} else if (StruggleProgressCurrentMinigame === "Flexibility") {
 				if (StruggleProgressFlexCircles?.length > 0) {
-					allowAllDialogExpressions();
 					StruggleFlexibilityProcess(false);
 				}
 			}
@@ -9345,7 +9709,6 @@ async function ForBetterClub() {
 					)
 				);
 				if (distMult > 0.5) {
-					allowAllDialogExpressions();
 					StruggleDexterityProcess();
 				}
 			}
@@ -10166,35 +10529,44 @@ async function ForBetterClub() {
 		const exportPosition = /** @type {const} */ ([1585, 15, 90, 90]);
 
 		function importCraft() {
-			const str = window.prompt(displayText("Paste the craft here")) || "";
-			if (str.length === 0) {
-				window.alert(displayText("No craft to import"));
-			}
-			try {
-				const craft = /** @type {Craft} */ (
-					JSON.parse(LZString.decompressFromBase64(str))
-				);
-				if (!isNonNullObject(craft)) {
-					logError(craft);
-					throw new Error(`invalid craft type ${typeof craft} ${str}`);
-				}
-				for (const [key, value] of Object.entries(craft)) {
-					if (
-						!isString(value) &&
-						!Number.isInteger(value) &&
-						value !== false &&
-						value !== true &&
-						value !== null &&
-						!isNonNullObject(value)
-					) {
-						logWarn("potentially invalid craft bundle:", key, "was", value);
+			showModal({
+				prompt: displayText("Paste the craft here"),
+				callback: (action, str) => {
+					if (action !== "submit" || !str) {
+						return;
 					}
-				}
-				CraftingSelectedItem = CraftingConvertItemToSelected(craft);
-				CraftingModeSet("Name");
-			} catch (e) {
-				logError("importing craft", e);
-			}
+					try {
+						const craft = /** @type {Craft} */ (
+							JSON.parse(LZString.decompressFromBase64(str))
+						);
+						if (!isNonNullObject(craft)) {
+							logError(craft);
+							throw new Error(`invalid craft type ${typeof craft} ${str}`);
+						}
+						for (const [key, value] of Object.entries(craft)) {
+							if (
+								!isString(value) &&
+								!Number.isInteger(value) &&
+								value !== false &&
+								value !== true &&
+								value !== null &&
+								!isNonNullObject(value)
+							) {
+								logWarn("potentially invalid craft bundle:", key, "was", value);
+							}
+						}
+						CraftingSelectedItem = CraftingConvertItemToSelected(craft);
+						CraftingModeSet("Name");
+					} catch (e) {
+						logError("importing craft", e);
+					}
+				},
+				input: {
+					initial: "",
+					readonly: false,
+					type: "textarea",
+				},
+			});
 		}
 
 		SDK.hookFunction(
@@ -10204,12 +10576,19 @@ async function ForBetterClub() {
 				switch (CraftingMode) {
 					case "Name":
 						if (MouseIn(...exportPosition)) {
-							window.prompt(
-								displayText("Copy the craft here"),
-								LZString.compressToBase64(
-									JSON.stringify(CraftingConvertSelectedToItem())
-								)
-							);
+							showModal({
+								prompt: displayText("Copy the craft here"),
+								input: {
+									initial: LZString.compressToBase64(
+										JSON.stringify(CraftingConvertSelectedToItem())
+									),
+									readonly: true,
+									type: "textarea",
+								},
+								callback: () => {
+									debug("exported craft");
+								},
+							});
 						} else if (MouseIn(...importPosition)) {
 							importCraft();
 						}
@@ -10262,6 +10641,161 @@ async function ForBetterClub() {
 				return ret;
 			}
 		);
+	}
+
+	let disabledUntil = 0;
+	/**
+	 * @typedef {{ prompt: string | Node, input?: { initial: string, readonly: boolean, type: "input" | "textarea" }, callback: (action: ModalAction, inputValue?: string) => void, buttons?: { submit?: string, cancel?: string } }} ModalOptions
+	 * @typedef {"submit" | "cancel" | "close"} ModalAction
+	 */
+	/**
+	 * @param {ModalOptions} opts
+	 */
+	function showModal(opts) {
+		disabledUntil = Date.now() + 500;
+		const modal = document.createElement("dialog");
+		modal.style.zIndex = "1001";
+		modal.style.display = "flex";
+		modal.style.flexDirection = "column";
+		modal.style.width = "50em";
+		modal.style.fontFamily = "Arial, Helvetica, sans-serif";
+		modal.open = true;
+
+		const prompt = document.createElement("div");
+		if (isString(opts.prompt)) {
+			prompt.textContent = opts.prompt;
+		} else {
+			prompt.append(opts.prompt);
+		}
+		modal.append(prompt);
+		document.body.append(modal);
+
+		let inputValue = "";
+
+		if (opts.input) {
+			const input = document.createElement(opts.input.type);
+			switch (opts.input.type) {
+				case "input":
+					{
+						const el = /** @type {HTMLInputElement} */ (input);
+						el.type = "text";
+					}
+					break;
+				case "textarea":
+					{
+						const el = /** @type {HTMLTextAreaElement} */ (input);
+						el.rows = 10;
+					}
+					break;
+				default:
+					// This should never happen
+					// eslint-disable-next-line @typescript-eslint/restrict-template-expressions
+					throw new Error(`invalid input type ${opts.input.type}`);
+			}
+			input.style.width = "100%";
+			input.readOnly = opts.input.readonly;
+			input.addEventListener("mouseover", () => {
+				input.select();
+			});
+			input.addEventListener("focus", () => {
+				input.select();
+			});
+			input.addEventListener("change", () => {
+				inputValue = input.value;
+			});
+
+			input.value = opts.input.initial;
+			modal.append(input);
+		}
+
+		const buttonContainer = document.createElement("div");
+		buttonContainer.style.display = "flex";
+		buttonContainer.style.flexDirection = "row";
+		buttonContainer.style.justifyContent = "space-between";
+		buttonContainer.style.marginTop = "1em";
+		buttonContainer.style.width = "100%";
+		modal.append(buttonContainer);
+
+		const submit = document.createElement("button");
+		submit.textContent = opts.buttons?.submit || displayText("Submit");
+		submit.addEventListener("click", () => {
+			close("submit");
+		});
+
+		const cancel = document.createElement("button");
+		cancel.textContent = opts.buttons?.cancel || displayText("Cancel");
+		cancel.addEventListener("click", () => {
+			close("cancel");
+		});
+
+		for (const button of [submit, cancel]) {
+			button.style.padding = "0.5em";
+			button.style.flexGrow = "1";
+		}
+
+		buttonContainer.append(cancel, submit);
+
+		modal.addEventListener("click", (e) => {
+			e.stopPropagation();
+		});
+		/**
+		 * @param {KeyboardEvent} e
+		 */
+		const keyClick = (e) => {
+			e.stopPropagation();
+			if (e.key === "Escape") {
+				close();
+			}
+		};
+		document.addEventListener("keydown", keyClick);
+
+		// Click-blocker
+		const blocker = document.createElement("div");
+		blocker.style.position = "fixed";
+		blocker.style.top = "0";
+		blocker.style.left = "0";
+		blocker.style.width = "100vw";
+		blocker.style.height = "100vh";
+		blocker.style.zIndex = "1000";
+		blocker.style.backgroundColor = "rgba(0, 0, 0, 0.9)";
+		blocker.title = displayText("Click to close the modal");
+		blocker.addEventListener("click", () => {
+			close();
+		});
+		blocker.addEventListener("focus", () => {
+			close();
+		});
+		document.body.append(blocker);
+
+		/**
+		 * @param {ModalAction} action
+		 */
+		function close(action = "close") {
+			if (Date.now() < disabledUntil) {
+				return;
+			}
+			disabledUntil = Date.now() + 500;
+			modal.close();
+			modal.remove();
+			blocker.remove();
+			document.removeEventListener("keydown", keyClick);
+			opts.callback(action, inputValue);
+		}
+	}
+
+	/**
+	 * @param {Omit<ModalOptions, "callback">} opts
+	 * @returns {Promise<[ModalAction, string | null]>}
+	 */
+	function showAsyncModal(opts) {
+		return new Promise((resolve) => {
+			showModal({
+				...opts,
+				callback: (action, inputValue) => {
+					resolve([action, inputValue]);
+				},
+			});
+		});
 	}
 
 	async function revampLilian() {
@@ -10500,6 +11034,30 @@ async function ForBetterClub() {
 		// 5 minutes
 		createTimer(sendHeartbeat, 1000 * 60 * 5);
 	})();
+
+	/**
+	 * @param {string} target
+	 * @param {boolean} [limitVisible]
+	 */
+	function findDrawnCharacters(target, limitVisible = false) {
+		const baseList = limitVisible
+			? ChatRoomCharacterDrawlist
+			: ChatRoomCharacter;
+		let targetMembers = [];
+		if (/^\d+$/u.test(target)) {
+			targetMembers = [
+				baseList.find((c) => c.MemberNumber === parseInt(target)),
+			];
+		} else {
+			targetMembers = baseList.filter(
+				(c) =>
+					CharacterNickname(c).split(" ")[0]?.toLowerCase() ===
+						target?.toLowerCase() ||
+					c.Name.split(" ")[0].toLowerCase() === target?.toLowerCase()
+			);
+		}
+		return targetMembers.filter((c) => c);
+	}
 
 	/** @type {(x: number, y: number, width: number, text: string, align: "left" | "center") => void} */
 	function drawTooltip(x, y, width, text, align) {

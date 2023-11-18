@@ -123,6 +123,7 @@ declare global {
   var RelogChatLog: HTMLDivElement | null;
   var ServerBeep: ServerBeep;
   var ServerSend: (event: string, data: unknown) => void;
+  var ServerSendQueueProcess: () => void;
   var GameVersion: string;
   var GLVersion: string;
   var LoginErrorMessage: string;
@@ -278,7 +279,11 @@ declare global {
   var TextGet: (id: string) => string;
   var StruggleDrawLockpickProgress: (C: Character) => void;
   var StruggleLockPickOrder: null | number[];
-  var SkillGetWithRatio: (skillType: string) => number;
+  var StruggleExpressionStore:
+    | Partial<Record<string, string>>
+    | null
+    | undefined;
+  var SkillGetWithRatio: (C: Character, skillType: string) => number;
   var LoginRun: () => void;
   var LoginClick: () => void;
   var CurrentScreenFunctions: ScreenFunctions;
@@ -557,6 +562,8 @@ declare global {
     Inventory: Item[];
     ChatSettings: ChatSettings;
     AudioSettings: { PlayBeeps?: boolean };
+    ImmersionSettings: { ShowRoomCustomization: number };
+    ExpressionQueue?: ExpressionQueueItem[];
   } & Character;
   type Relationship = {
     Name: string;
@@ -601,7 +608,7 @@ declare global {
   }
   interface BaseCharacter {
     AssetFamily: "Female3DCG";
-    ArousalSettings: ArousalSettings;
+    ArousalSettings?: ArousalSettings;
     Inventory: unknown;
     OnlineSettings: OnlineSettings;
     OnlineSharedSettings: OnlineSharedSettings;
@@ -645,6 +652,11 @@ declare global {
     ChatRoomName?: string;
     IsMail?: boolean;
     ClickAction?: "FriendList";
+  };
+  type ExpressionQueueItem = {
+    Time?: number;
+    Group?: string;
+    Expression?: string;
   };
   type CraftingItem = {
     Name?: string;
@@ -929,6 +941,10 @@ declare global {
   type FUSAMPublicAPI = {
     present: true;
     addons: Record<string, FUSAMAddonState>;
+    registerDebugMethod: (
+      name: string,
+      method: () => string | Promise<string>
+    ) => void;
   };
 
   type FUSAMAddonState = {
