@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name Bondage Club Enhancements
 // @namespace https://www.bondageprojects.com/
-// @version 4.63
+// @version 4.67
 // @description FBC - For Better Club - enhancements for the bondage club - old name kept in tampermonkey for compatibility
 // @author Sidious
 // @match https://bondageprojects.elementfx.com/*
@@ -38,25 +38,27 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const FBC_VERSION = "4.63-Lilian-20231118153800";
+const FBC_VERSION = "4.67-Lilian-20231224101200";
 const settingsVersion = 55;
 
 const fbcChangelog = `${FBC_VERSION}
-- R98 compatibility
-- linked chat embeds to the trusted origins for 3rd party content
+- fixed timers not working
 
-4.62
-- added a patch to prevent the game from processing serversends while the game does not have connection with the server
-- fixes towards a rare error related to ArousalSettings not being defined on remote characters
-- removed a duplicate hello message on initial load when automatically rejoining a chatroom
-- removed FBC's duplicate implementation of client-side rate limiting
+4.66
+- R99 compatibility
+- added option to show numeric arousal, when meter is expanded
 
-4.61
-- fix a bug where the animation can get in a bad state when presented with an invalid expression
+4.65
+- restore gag anti-cheat
 
-4.60
-- add ability to define target for /versions command (dDeepLb)
-- preserve formatting in IM messages (dDeepLb)
+4.64
+- moved settings and wardrobe data to extension settings
+- fixed instant messenger and dialog compatibility with MBCHC
+- fixed a game freeze after a failed login attempt
+- preliminary readiness for R99
+- technical changes
+  - use bc-stubs for type checking
+  - use club functions and variables for drawing tooltips (dDeepLb)
 `;
 
 /*
@@ -73,7 +75,7 @@ var bcModSdk=function(){"use strict";const e="1.1.0";function o(e){alert("Mod ER
 async function ForBetterClub() {
 	"use strict";
 
-	const SUPPORTED_GAME_VERSIONS = ["R98"];
+	const SUPPORTED_GAME_VERSIONS = ["R99"];
 	const CAPABILITIES = /** @type {const} */ (["clubslave"]);
 
 	const w = window;
@@ -164,10 +166,10 @@ async function ForBetterClub() {
 	/** @type {Map<string, "allowed" | "denied">} */
 	const sessionCustomOrigins = new Map();
 
-	/** @type {Map<number, BCECharacterState>} */
+	/** @type {Map<number, FBCCharacterState>} */
 	const characterStates = new Map();
 
-	/** @type {ToySyncState} */
+	/** @type {FBCToySyncState} */
 	const toySyncState = {
 		deviceSettings: new Map(),
 	};
@@ -255,6 +257,15 @@ async function ForBetterClub() {
 			category: "activities",
 			description:
 				"More stuttering at high arousal, moans between words with vibrators.",
+		},
+		numericArousalMeter: {
+			label: "Show numeric arousal meter",
+			value: true,
+			sideEffects: (newValue) => {
+				debug("numericArousalMeter", newValue);
+			},
+			category: "activities",
+			description: "Shows the numeric value of arousal meters when expanded.",
 		},
 		layeringMenu: {
 			label: "Enable layering menus",
@@ -666,20 +677,6 @@ async function ForBetterClub() {
 			description:
 				"Use Lilian's customized gag effect to prevent others from understanding you even those that are cheating.",
 		},
-		antiLoosenOwnerLock: {
-			label:
-				"(*) Anti-cheat on owner locked restraints",
-			value: true,
-			sideEffects: (newValue) => {
-				debug("antiLoosenOwnerLock", newValue);
-				if (!newValue) {
-					fbcSettings.antiLoosenOwnerLock = true;
-				}		
-			},
-			category: "immersion",
-			description:
-			"Anti-cheat on owner locked restraints.",
-		},
 		blindWithoutGlasses: {
 			label: "Require glasses to see",
 			value: false,
@@ -915,7 +912,7 @@ async function ForBetterClub() {
 					if (!isString(newValue)) {
 						throw new Error("expected string for buttplugDevices");
 					}
-					const devices = /** @type {ToySetting[]} */ (JSON.parse(newValue));
+					const devices = /** @type {FBCToySetting[]} */ (JSON.parse(newValue));
 					if (!Array.isArray(devices)) {
 						throw new Error("expected array for devices");
 					}
@@ -931,21 +928,25 @@ async function ForBetterClub() {
 		},
 	});
 
-	/** @type {SocketEventListenerRegister} */
+	/** @type {[any, any][]} */
 	const listeners = [];
-	/** @type {(event: ServerSocketEvent, cb: SocketEventListener) => void} */
+	/** @type {typeof ServerSocket.on} */
 	function registerSocketListener(event, cb) {
 		if (!listeners.some((l) => l[1] === cb)) {
 			listeners.push([event, cb]);
-			// eslint-disable-next-line @typescript-eslint/no-misused-promises
-			ServerSocket.on(event, cb);
+			// @ts-ignore - too lazy to fix
+			return ServerSocket.on(event, cb);
 		}
+		return null;
 	}
 
 	function appendSocketListenersToInit() {
 		SDK.hookFunction(
 			"ServerInit",
 			HOOK_PRIORITIES.AddBehaviour,
+			/**
+			 * @param {Parameters<typeof ServerInit>} args
+			 */
 			(args, next) => {
 				const ret = next(args);
 				for (const [event, cb] of listeners) {
@@ -975,9 +976,17 @@ async function ForBetterClub() {
 			);
 			const onlineSettings = /** @type {typeof fbcSettings} */ (
 				JSON.parse(
-					LZString.decompressFromBase64(Player.OnlineSettings.BCE) || null
+					LZString.decompressFromBase64(
+						Player.ExtensionSettings.FBC || Player.OnlineSettings.BCE
+					) || null
 				)
 			);
+			if (Player.OnlineSettings.BCE) {
+				Player.ExtensionSettings.FBC = Player.OnlineSettings.BCE;
+				ServerPlayerExtensionSettingsSync("FBC");
+				logInfo("Migrated online settings to extension settings");
+				delete Player.OnlineSettings.BCE;
+			}
 			if (
 				onlineSettings?.version >= settings?.version ||
 				(typeof settings?.version === "undefined" &&
@@ -1022,12 +1031,10 @@ async function ForBetterClub() {
 			);
 		}
 		localStorage.setItem(bceSettingKey(), JSON.stringify(fbcSettings));
-		Player.OnlineSettings.BCE = LZString.compressToBase64(
+		Player.ExtensionSettings.FBC = LZString.compressToBase64(
 			JSON.stringify(fbcSettings)
 		);
-		ServerAccountUpdate.QueueData({
-			OnlineSettings: Player.OnlineSettings,
-		});
+		ServerPlayerExtensionSettingsSync("FBC");
 	};
 
 	/**
@@ -1047,10 +1054,6 @@ async function ForBetterClub() {
 		}
 		bceSaveSettings();
 
-		// Polyfill old functions
-		if (typeof Player.CanChange === "undefined") {
-			Player.CanChange = Player.CanChangeOwnClothes;
-		}
 		postSettingsHasRun = true;
 	}
 
@@ -1115,8 +1118,6 @@ async function ForBetterClub() {
 					"完整的堵嘴反作弊: 使用当前装备的堵嘴来确定乱码",
 				"(*) Extra gag anti-cheat: (Lilian version)":
 					"(*) 扩展的堵嘴反作弊:（莉莉安定制版）",
-				"(*) Anti-cheat on owner locked restraints":
-					"(*) 禁止松脱有主人锁的道具",
 				"Require glasses to see": "需要眼镜才能看清",
 				"Check for updates": "检查更新",
 				"Automatic Relogin on Disconnect": "断线后自动重连",
@@ -1180,8 +1181,6 @@ async function ForBetterClub() {
 
 	window.fbcDisplayText = (original, replacements = {}) =>
 		displayText(original, replacements);
-	window.bceDisplayText = (original, replacements = {}) =>
-		displayText(original, replacements);
 
 	/**
 	 * @type {(gameVersion: string) => Readonly<{ [key: string]: string }>}
@@ -1190,66 +1189,67 @@ async function ForBetterClub() {
 		switch (gameVersion) {
 			default:
 				return /** @type {const} */ ({
-					ActivityChatRoomArousalSync: "21318CAF",
+					ActivityChatRoomArousalSync: "BFF3DED7",
 					ActivitySetArousal: "3AE28123",
 					ActivitySetArousalTimer: "1342AFE2",
 					ActivityTimerProgress: "6CD388A7",
-					AppearanceClick: "723EA7F1",
+					AppearanceClick: "4C04C15E",
 					AppearanceExit: "AA300341",
 					AppearanceLoad: "4360C485",
-					AppearanceRun: "0BBDEE59",
+					AppearanceRun: "6EC75705",
 					CharacterAppearanceWardrobeLoad: "A5B63A03",
 					CharacterBuildDialog: "85F79C6E",
-					CharacterCompressWardrobe: "8D3B1AB1",
-					CharacterDecompressWardrobe: "A9FD29CC",
+					CharacterCompressWardrobe: "2A05ECD1",
+					CharacterDecompressWardrobe: "327FADA4",
 					CharacterDelete: "398D1116",
 					CharacterGetCurrent: "45608177",
-					CharacterLoadCanvas: "BA6AD4FF",
+					CharacterLoadCanvas: "EAB81BC4",
 					CharacterNickname: "A794EFF5",
-					CharacterRefresh: "5BF9DA5A",
+					CharacterRefresh: "F2459653",
 					CharacterReleaseTotal: "396640D1",
-					CharacterSetActivePose: "5BCD2A9E",
 					CharacterSetCurrent: "F46573D8",
 					CharacterSetFacialExpression: "F8272D7A",
 					ChatAdminRoomCustomizationClick: "E194A605",
 					ChatAdminRoomCustomizationProcess: "B33D6388",
 					ChatRoomCharacterItemUpdate: "263DB2F0",
-					ChatRoomCharacterUpdate: "9D0EEA39",
+					ChatRoomCharacterUpdate: "C444E92D",
 					ChatRoomClearAllElements: "14DAAB05",
-					ChatRoomClick: "120B0F0B",
-					ChatRoomCreateElement: "9A3FD548",
+					ChatRoomClick: "4C4A7B70",
+					ChatRoomCreateElement: "AA36E8B6",
 					ChatRoomCurrentTime: "A462DD3A",
 					ChatRoomDrawBackground: "AEE70C4E",
 					ChatRoomDrawCharacterOverlay: "06FB4CC3",
 					ChatRoomHTMLEntities: "0A7ADB1D",
-					ChatRoomKeyDown: "B4BFDB0C",
+					ChatRoomKeyDown: "2C43231C",
 					ChatRoomListManipulation: "75D28A8B",
 					ChatRoomMessage: "BBD61334",
-					ChatRoomMessageDisplay: "C7053411",
+					ChatRoomMessageDisplay: "A9ACC758",
 					ChatRoomRegisterMessageHandler: "C432923A",
 					ChatRoomResize: "653445D7",
-					ChatRoomRun: "6F4C7B4D",
+					ChatRoomRun: "94D14C8C",
 					ChatRoomSendChat: "7F540ED0",
 					ChatRoomStart: "9B822A9A",
 					CommandExecute: "5C948CC3",
-					CommandParse: "C9061FE8",
+					CommandParse: "C63F98C3",
 					CommonClick: "1F6DF7CB",
 					CommonColorIsValid: "390A2CE4",
 					CommonSetScreen: "E2AC00F4",
-					CraftingClick: "FF76A404",
-					CraftingConvertSelectedToItem: "E827EA50",
+					CraftingClick: "571D9763",
+					CraftingConvertSelectedToItem: "308B958C",
 					CraftingRun: "5BE6E125",
-					DialogClick: "D0FA2714",
-					DialogDraw: "8A814153",
+					DialogClick: "A1B56CDF",
+					DialogDraw: "D8377D69",
 					DialogDrawItemMenu: "FCE556C2",
 					DialogLeave: "C37553DC",
+					DrawArousalMeter: "BB0755AF",
+					DrawArousalThermometer: "7ED6D822",
 					DrawBackNextButton: "9AF4BA37",
 					DrawButton: "A7023A82",
-					DrawCharacter: "35E09A1E",
+					DrawCharacter: "41CF69C4",
 					DrawCheckbox: "00FD87EB",
-					DrawImageEx: "3D3D74F5",
-					DrawImageResize: "8CF55F04",
-					DrawItemPreview: "58E9BA94",
+					DrawImageEx: "E01BE7E7",
+					DrawImageResize: "D205975A",
+					DrawItemPreview: "6A7A1E2A",
 					DrawProcess: "BC1E9396",
 					DrawText: "C1BF0F50",
 					DrawTextFit: "F9A1B11E",
@@ -1263,7 +1263,7 @@ async function ForBetterClub() {
 					FriendListShowBeep: "6C0449BB",
 					GameRun: "ED65B730",
 					GLDrawResetCanvas: "81214642",
-					InformationSheetRun: "E248ADC7",
+					InformationSheetRun: "90140B32",
 					InventoryGet: "E666F671",
 					InventoryItemMiscMistressTimerPadlockClick: "861419FC",
 					InventoryItemMiscMistressTimerPadlockDraw: "4E1628BE",
@@ -1280,29 +1280,32 @@ async function ForBetterClub() {
 					LoginClick: "EE94BEC7",
 					LoginRun: "C3926C4F",
 					LoginSetSubmitted: "C88F4A8E",
+					LoginStatusReset: "18619F02",
 					MouseIn: "CA8B839E",
 					NotificationDrawFavicon: "AB88656B",
 					NotificationRaise: "E8F29646",
 					NotificationTitleUpdate: "0E92F3ED",
 					OnlineGameAllowChange: "3779F42C",
-					OnlineProfileClick: "CC034993",
-					OnlineProfileRun: "B0AF608D",
+					OnlineProfileClick: "521146DF",
+					OnlineProfileRun: "7F57EF9A",
+					PoseSetActive: "2FE9ABBA",
 					RelogRun: "10AF5A60",
 					RelogExit: "2DFB2DAD",
 					ServerAccountBeep: "F16771D4",
 					ServerAppearanceBundle: "4D069622",
-					ServerAppearanceLoadFromBundle: "C9F5FFAC",
+					ServerAppearanceLoadFromBundle: "946537FD",
 					ServerClickBeep: "3E6277BE",
 					ServerConnect: "845E50A6",
 					ServerDisconnect: "06C1A6B0",
 					ServerInit: "FEC6457F",
 					ServerOpenFriendList: "FA8D3CDE",
-					ServerSend: "D356D537",
+					ServerPlayerExtensionSettingsSync: "1776666B",
+					ServerSend: "ABE74E75",
 					ServerSendQueueProcess: "BD4277AC",
 					SkillGetWithRatio: "3EB4BC45",
 					SpeechGarble: "9D669F73",
 					SpeechGarbleByGagLevel: "5F6E16C8",
-					SpeechGetTotalGagLevel: "C55B705A",
+					SpeechGetTotalGagLevel: "5F4F6D45",
 					StruggleDexterityProcess: "7E19ADA9",
 					StruggleFlexibilityCheck: "727CE05B",
 					StruggleFlexibilityProcess: "278D7285",
@@ -1315,14 +1318,14 @@ async function ForBetterClub() {
 					TimerInventoryRemove: "1FA771FB",
 					TimerProcess: "52458C63",
 					TitleExit: "F13F533C",
-					ValidationSanitizeProperties: "C6A54638",
-					WardrobeClick: "E96F7F63",
-					WardrobeExit: "EE83FF29",
-					WardrobeFastLoad: "38627DC2",
-					WardrobeFastSave: "B62385C1",
+					ValidationSanitizeProperties: "08E81594",
+					WardrobeClick: "33405B1D",
+					WardrobeExit: "12D14AE4",
+					WardrobeFastLoad: "5C54EA7B",
+					WardrobeFastSave: "61D02972",
 					WardrobeFixLength: "CA3334C6",
 					WardrobeLoad: "C343A4C7",
-					WardrobeRun: "9616EB3A",
+					WardrobeRun: "633B3570",
 				});
 		}
 	};
@@ -1468,9 +1471,7 @@ async function ForBetterClub() {
 			],
 		});
 	};
-	w.bceSendAction = fbcSendAction;
 
-	w.bceSettingValue = (key) => fbcSettingValue(key);
 	w.fbcSettingValue = (key) => {
 		if (isDefaultSettingKey(key)) {
 			return fbcSettings[key];
@@ -1487,7 +1488,7 @@ async function ForBetterClub() {
 	};
 
 	/**
-	 * @type {(duration: number) => Duration}
+	 * @type {(duration: number) => FBCDuration}
 	 */
 	const durationToComponents = (duration) => {
 		let seconds = Math.floor(duration / 1000);
@@ -1507,7 +1508,7 @@ async function ForBetterClub() {
 	};
 
 	/**
-	 * @type {(dateFuture: Date) => Duration}
+	 * @type {(dateFuture: Date) => FBCDuration}
 	 */
 	const timeUntilDate = (dateFuture) => {
 		// https://stackoverflow.com/a/13904621/1780502 - jackcogdill
@@ -1629,19 +1630,43 @@ async function ForBetterClub() {
 	// Delay game processes until registration is complete
 	/** @type {"init" | "enable" | "disable"} */
 	let funcsRegistered = "init";
-	SDK.hookFunction("LoginResponse", HOOK_PRIORITIES.Top, (args, next) => {
-		if (funcsRegistered === "init") {
-			funcsRegistered = "disable";
+	SDK.hookFunction(
+		"LoginResponse",
+		HOOK_PRIORITIES.Top,
+		/**
+		 * @param {Parameters<typeof LoginResponse>} args
+		 */ (args, next) => {
+			if (funcsRegistered === "init") {
+				funcsRegistered = "disable";
+			}
+			return next(args);
 		}
-		return next(args);
-	});
-	SDK.hookFunction("GameRun", HOOK_PRIORITIES.Top, (args, next) => {
-		if (funcsRegistered === "disable") {
-			requestAnimationFrame(GameRun);
-			return null;
+	);
+	SDK.hookFunction(
+		"LoginStatusReset",
+		HOOK_PRIORITIES.Top,
+		/**
+		 * @param {Parameters<typeof LoginStatusReset>} args
+		 */ (args, next) => {
+			if (funcsRegistered === "disable") {
+				funcsRegistered = "init";
+			}
+			return next(args);
 		}
-		return next(args);
-	});
+	);
+	SDK.hookFunction(
+		"GameRun",
+		HOOK_PRIORITIES.Top,
+		/**
+		 * @param {Parameters<typeof GameRun>} args
+		 */ (args, next) => {
+			if (funcsRegistered === "disable") {
+				requestAnimationFrame(GameRun);
+				return null;
+			}
+			return next(args);
+		}
+	);
 
 	(async function () {
 		await waitFor(() => !!w.FUSAM?.present);
@@ -1672,7 +1697,6 @@ async function ForBetterClub() {
 	registerFunction(chatRoomOverlay, "chatRoomOverlay");
 	registerFunction(privateWardrobe, "privateWardrobe");
 	registerFunction(antiGarbling, "antiGarbling");
-	registerFunction(antiLoosen, "antiLoosen");
 	registerFunction(autoGhostBroadcast, "autoGhostBroadcast");
 	registerFunction(blindWithoutGlasses, "blindWithoutGlasses");
 	registerFunction(friendPresenceNotifications, "friendPresenceNotifications");
@@ -1692,6 +1716,7 @@ async function ForBetterClub() {
 	registerFunction(leashFix, "leashFix");
 	registerFunction(hookBCXAPI, "hookBCXAPI");
 	registerFunction(customContentDomainCheck, "customContentDomainCheck");
+	registerFunction(numericArousalMeters, "numericArousalMeters");
 	registerFunction(revampLilian, "revampLilian");
 	funcsRegistered = "enable";
 
@@ -1735,7 +1760,7 @@ async function ForBetterClub() {
 		// Version check
 		debug("checking for updates...");
 		fetch(
-			`https://flameshare.azureedge.net/shared/bce.user.js?_=${
+			`https://flameustc.github.io/BCE-Lilian/bce.user.js?_=${
 				(Date.now() / 1000 / 3600) | 0
 			}`
 		)
@@ -1813,6 +1838,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"ChatRoomCreateElement",
 			HOOK_PRIORITIES.AddBehaviour,
+			/**
+			 * @param {Parameters<typeof ChatRoomCreateElement>} args
+			 */
 			(args, next) => {
 				const isRelog = !!RelogChatLog;
 				const ret = next(args);
@@ -1833,6 +1861,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"FriendListLoadFriendList",
 			HOOK_PRIORITIES.OverrideBehaviour,
+			/**
+			 * @param {Parameters<typeof FriendListLoadFriendList>} args
+			 */
 			(args, next) => {
 				if (!document.getElementById("FriendList")) {
 					return;
@@ -1845,9 +1876,10 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"FriendListLoadFriendList",
 			HOOK_PRIORITIES.AddBehaviour,
-			/** @type {(args: any[], next: (args: { MemberName: string; MemberNumber: number; ChatRoomName: string | null; ChatRoomSpace: string | null; Private?: boolean; Type: "Submissive" | "Friend" }[]) => void) => void} */
+			/**
+			 * @param {Parameters<typeof FriendListLoadFriendList>} args
+			 */
 			(args, next) => {
-				/** @type {{ MemberName: string; MemberNumber: number; ChatRoomName: string | null; ChatRoomSpace: string | null; Private?: boolean; Type: "Submissive" | "Friend" }[]} */
 				const data = args[0];
 				const mode = FriendListMode[FriendListModeIndex];
 				if (mode === "Friends") {
@@ -1862,21 +1894,13 @@ async function ForBetterClub() {
 			}
 		);
 
-		// Send responses immediately
-		SDK.hookFunction(
-			"ServerSend",
-			HOOK_PRIORITIES.AddBehaviour,
-			(args, next) => {
-				const ret = next(args);
-				ServerSendQueueProcess();
-				return ret;
-			}
-		);
-
 		// Prevent processing of sent messages when disconnected
 		SDK.hookFunction(
 			"ServerSendQueueProcess",
 			HOOK_PRIORITIES.OverrideBehaviour,
+			/**
+			 * @param {Parameters<typeof ServerSendQueueProcess>} args
+			 */
 			(args, next) => {
 				if (!ServerIsConnected) {
 					return null;
@@ -1895,7 +1919,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"GameRun",
 			HOOK_PRIORITIES.Observe,
-			/** @type {(args: DOMHighResTimeStamp[], next: (args: DOMHighResTimeStamp[]) => void) => void} */
+			/**
+			 * @param {Parameters<typeof GameRun>} args
+			 */
 			(args, next) => {
 				const [time] = args;
 				if (lastFrame >= 0 && time > 0) {
@@ -2001,7 +2027,7 @@ async function ForBetterClub() {
 					return;
 				}
 
-				/** @type {Duration} */
+				/** @type {FBCDuration} */
 				const additions = {
 					days: 0,
 					hours: 0,
@@ -2122,6 +2148,9 @@ async function ForBetterClub() {
 			SDK.hookFunction(
 				fn,
 				HOOK_PRIORITIES.AddBehaviour,
+				/**
+				 * @param {Parameters<typeof InventoryItemMiscMistressTimerPadlockLoad>} args
+				 */
 				// eslint-disable-next-line no-loop-func
 				(args, next) => {
 					const ret = next(args);
@@ -2137,6 +2166,9 @@ async function ForBetterClub() {
 			SDK.hookFunction(
 				fn,
 				HOOK_PRIORITIES.AddBehaviour,
+				/**
+				 * @param {Parameters<typeof InventoryItemMiscMistressTimerPadlockExit>} args
+				 */
 				// eslint-disable-next-line no-loop-func
 				(args, next) => {
 					const ret = next(args);
@@ -2360,7 +2392,7 @@ async function ForBetterClub() {
 					"Import looks from a string (BCX or FBC export)"
 				),
 				Action: () => {
-					if (!Player.CanChange() || !OnlineGameAllowChange()) {
+					if (!Player.CanChangeOwnClothes() || !OnlineGameAllowChange()) {
 						fbcChatNotify(
 							displayText(
 								"You cannot change your appearance while bound or during online games, such as LARP."
@@ -2531,8 +2563,11 @@ async function ForBetterClub() {
 								msg.length > 0 && [".", "/"].includes(msg[0]) ? "\u200b" : ""
 							}${msg}`
 						);
-						// True to skip history
-						ChatRoomSendChat(true);
+						ChatRoomSendChat();
+
+						// Erase duplicate from history to prevent things like automatic shock collars listening to the history from triggering
+						ChatRoomLastMessage.pop();
+
 						ChatRoomTargetMemberNumber = originalTarget;
 					}
 				},
@@ -2589,16 +2624,6 @@ async function ForBetterClub() {
 				},
 			},
 		];
-
-		// Skip history patch for /w
-		patchFunction(
-			"ChatRoomSendChat",
-			{
-				"ChatRoomSendChat()": `ChatRoomSendChat(skipHistory)`,
-				"ChatRoomLastMessage.push(msg);": `if (!skipHistory) ChatRoomLastMessage.push(msg);`,
-			},
-			"Whispers sent via /w will trigger items such as the automated shock collar and futuristic training belt."
-		);
 
 		for (const c of cmds) {
 			if (Commands.some((a) => a.Tag === c.Tag)) {
@@ -2690,7 +2715,7 @@ async function ForBetterClub() {
 		w.PreferenceSubscreenBCESettingsRun = function () {
 			w.MainCanvas.getContext("2d").textAlign = "left";
 			DrawText(
-				displayText("For Better Club Settings (formerly BCE)"),
+				displayText("For Better Club Settings (FBC)"),
 				300,
 				125,
 				"Black",
@@ -2966,6 +2991,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"DrawButton",
 			HOOK_PRIORITIES.ModifyBehaviourMedium,
+			/**
+			 * @param {Parameters<typeof DrawButton>} args
+			 */
 			(args, next) => {
 				// 7th argument is image URL
 				switch (args[6]) {
@@ -2982,6 +3010,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"TextGet",
 			HOOK_PRIORITIES.ModifyBehaviourHigh,
+			/**
+			 * @param {Parameters<typeof TextGet>} args
+			 */
 			(args, next) => {
 				switch (args[0]) {
 					case "HomepageBCESettings":
@@ -2991,6 +3022,8 @@ async function ForBetterClub() {
 				}
 			}
 		);
+
+		// @ts-ignore - BCESettings is a valid subscreen due to our additions
 		PreferenceSubscreenList.push("BCESettings");
 
 		/** @type {(e: KeyboardEvent) => void} */
@@ -3024,6 +3057,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"StruggleLockPickDraw",
 			HOOK_PRIORITIES.AddBehaviour,
+			/**
+			 * @param {Parameters<typeof StruggleLockPickDraw>} args
+			 */
 			(args, next) => {
 				if (fbcSettings.lockpick && w.StruggleLockPickOrder) {
 					const seed = parseInt(StruggleLockPickOrder.join(""));
@@ -3104,65 +3140,77 @@ async function ForBetterClub() {
 				posMaps: {},
 			};
 
-			SDK.hookFunction("LoginRun", HOOK_PRIORITIES.Top, (args, next) => {
-				const ret = next(args);
-				if (Object.keys(loginData.passwords).length > 0) {
-					DrawText(
-						displayText("Saved Logins (FBC)"),
-						170,
-						35,
-						"White",
-						"Black"
-					);
-				}
-				DrawButton(1250, 385, 180, 60, displayText("Save (FBC)"), "White");
-
-				let y = 60;
-				for (const user in loginData.passwords) {
-					if (
-						!Object.prototype.hasOwnProperty.call(loginData.passwords, user)
-					) {
-						continue;
+			SDK.hookFunction(
+				"LoginRun",
+				HOOK_PRIORITIES.Top,
+				/**
+				 * @param {Parameters<typeof LoginRun>} args
+				 */ (args, next) => {
+					const ret = next(args);
+					if (Object.keys(loginData.passwords).length > 0) {
+						DrawText(
+							displayText("Saved Logins (FBC)"),
+							170,
+							35,
+							"White",
+							"Black"
+						);
 					}
-					loginData.posMaps[y] = user;
-					DrawButton(10, y, 350, 60, user, "White");
-					DrawButton(355, y, 60, 60, "X", "White");
-					y += 70;
-				}
-				return ret;
-			});
+					DrawButton(1250, 385, 180, 60, displayText("Save (FBC)"), "White");
 
-			SDK.hookFunction("LoginClick", HOOK_PRIORITIES.Top, (args, next) => {
-				const ret = next(args);
-				if (MouseIn(1250, 385, 180, 60)) {
-					bceUpdatePasswordForReconnect();
-					loginData.posMaps = {};
-					loginData.passwords = loadPasswords() || {};
-				}
-				const now = Date.now();
-				if (now - lastClick < 150) {
+					let y = 60;
+					for (const user in loginData.passwords) {
+						if (
+							!Object.prototype.hasOwnProperty.call(loginData.passwords, user)
+						) {
+							continue;
+						}
+						loginData.posMaps[y] = user;
+						DrawButton(10, y, 350, 60, user, "White");
+						DrawButton(355, y, 60, 60, "X", "White");
+						y += 70;
+					}
 					return ret;
 				}
-				lastClick = now;
-				for (const pos in loginData.posMaps) {
-					if (!Object.prototype.hasOwnProperty.call(loginData.posMaps, pos)) {
-						continue;
-					}
-					const idx = parseInt(pos);
-					if (MouseIn(10, idx, 350, 60)) {
-						ElementValue("InputName", loginData.posMaps[idx]);
-						ElementValue(
-							"InputPassword",
-							loginData.passwords[loginData.posMaps[idx]]
-						);
-					} else if (MouseIn(355, idx, 60, 60)) {
-						bceClearPassword(loginData.posMaps[idx]);
+			);
+
+			SDK.hookFunction(
+				"LoginClick",
+				HOOK_PRIORITIES.Top,
+				/**
+				 * @param {Parameters<typeof LoginClick>} args
+				 */ (args, next) => {
+					const ret = next(args);
+					if (MouseIn(1250, 385, 180, 60)) {
+						bceUpdatePasswordForReconnect();
 						loginData.posMaps = {};
 						loginData.passwords = loadPasswords() || {};
 					}
+					const now = Date.now();
+					if (now - lastClick < 150) {
+						return ret;
+					}
+					lastClick = now;
+					for (const pos in loginData.posMaps) {
+						if (!Object.prototype.hasOwnProperty.call(loginData.posMaps, pos)) {
+							continue;
+						}
+						const idx = parseInt(pos);
+						if (MouseIn(10, idx, 350, 60)) {
+							ElementValue("InputName", loginData.posMaps[idx]);
+							ElementValue(
+								"InputPassword",
+								loginData.passwords[loginData.posMaps[idx]]
+							);
+						} else if (MouseIn(355, idx, 60, 60)) {
+							bceClearPassword(loginData.posMaps[idx]);
+							loginData.posMaps = {};
+							loginData.passwords = loadPasswords() || {};
+						}
+					}
+					return ret;
 				}
-				return ret;
-			});
+			);
 
 			CurrentScreenFunctions.Run = LoginRun;
 			CurrentScreenFunctions.Click = LoginClick;
@@ -3222,34 +3270,46 @@ async function ForBetterClub() {
 			]);
 		}
 
-		SDK.hookFunction("RelogRun", HOOK_PRIORITIES.Top, (args, next) => {
-			const forbiddenReasons = ["ErrorDuplicatedLogin"];
-			if (!forbiddenReasons.includes(LoginErrorMessage)) {
-				relog();
-			} else if (!breakCircuit) {
-				SDK.callOriginal("ServerAccountBeep", [
-					{
-						MemberNumber: Player.MemberNumber,
-						MemberName: Player.Name,
-						ChatRoomName: displayText("ERROR"),
-						Private: true,
-						Message: displayText(
-							"Signed in from a different location! Refresh the page to re-enable relogin in this tab."
-						),
-						ChatRoomSpace: "",
-					},
-				]);
-				breakCircuit = true;
-				breakCircuitFull = true;
+		SDK.hookFunction(
+			"RelogRun",
+			HOOK_PRIORITIES.Top,
+			/**
+			 * @param {Parameters<typeof RelogRun>} args
+			 */ (args, next) => {
+				const forbiddenReasons = ["ErrorDuplicatedLogin"];
+				if (!forbiddenReasons.includes(LoginErrorMessage)) {
+					relog();
+				} else if (!breakCircuit) {
+					SDK.callOriginal("ServerAccountBeep", [
+						{
+							MemberNumber: Player.MemberNumber,
+							MemberName: Player.Name,
+							ChatRoomName: displayText("ERROR"),
+							Private: true,
+							Message: displayText(
+								"Signed in from a different location! Refresh the page to re-enable relogin in this tab."
+							),
+							ChatRoomSpace: "",
+						},
+					]);
+					breakCircuit = true;
+					breakCircuitFull = true;
+				}
+				return next(args);
 			}
-			return next(args);
-		});
+		);
 
-		SDK.hookFunction("RelogExit", HOOK_PRIORITIES.Top, (args, next) => {
-			breakCircuit = false;
-			breakCircuitFull = false;
-			return next(args);
-		});
+		SDK.hookFunction(
+			"RelogExit",
+			HOOK_PRIORITIES.Top,
+			/**
+			 * @param {Parameters<typeof RelogExit>} args
+			 */ (args, next) => {
+				breakCircuit = false;
+				breakCircuitFull = false;
+				return next(args);
+			}
+		);
 
 		registerSocketListener("connect", () => {
 			breakCircuit = false;
@@ -3258,7 +3318,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"ServerDisconnect",
 			HOOK_PRIORITIES.ModifyBehaviourHigh,
-			/** @type {(args: [unknown, boolean], next: (args: [unknown, boolean]) => void) => void} */
+			/**
+			 * @param {Parameters<typeof ServerDisconnect>} args
+			 */
 			(args, next) => {
 				const [, force] = args;
 				args[1] = false;
@@ -3653,6 +3715,7 @@ async function ForBetterClub() {
 
 		/**
 		 * StutterWord will add s-stutters to the beginning of words and return 1-2 words, the original word with its stutters and a sound, based on arousal
+		 * TODO: trailing bracket will break this function
 		* @type {(word: string, forceStutter?: boolean, isChinese?: boolean) => string[]}
 		 */
 		function stutterWord(word, forceStutter, isChinese) {
@@ -3874,6 +3937,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"StruggleMinigameStop",
 			HOOK_PRIORITIES.ModifyBehaviourMedium,
+			/**
+			 * @param {Parameters<typeof StruggleMinigameStop>} args
+			 */
 			(args, next) => {
 				if (bceAnimationEngineEnabled()) {
 					StruggleExpressionStore = null;
@@ -3928,7 +3994,7 @@ async function ForBetterClub() {
 			};
 		}
 
-		/** @type {{[key: string]: string[]}} */
+		/** @type {{[key: string]: ExpressionName[]}} */
 		const bceExpressionModifierMap = Object.freeze({
 			Blush: [null, "Low", "Medium", "High", "VeryHigh", "Extreme"],
 		});
@@ -4003,10 +4069,10 @@ async function ForBetterClub() {
 					p.Pose = p.Pose.map(
 						// eslint-disable-next-line no-loop-func
 						(
-							/** @type {string | PoseEx} */
+							/** @type {AssetPoseName | PoseEx} */
 							v
 						) => {
-							/** @type {string} */
+							/** @type {AssetPoseName} */
 							// @ts-ignore
 							const poseName = v;
 							return {
@@ -5115,70 +5181,62 @@ async function ForBetterClub() {
 			];
 		}
 
-		/** @type {(dict: ChatMessageDictionary[]) => boolean} */
+		/** @type {(dict: ChatMessageDictionary) => boolean} */
 		function dictHasPlayerTarget(dict) {
 			return (
 				dict?.some(
 					(t) =>
 						t &&
-						/^(Target|Destination)Character(Name)?$/u.test(t.Tag) &&
-						t.MemberNumber === Player.MemberNumber
-				) ||
-				dict?.some((t) => t && t.TargetCharacter === Player.MemberNumber) ||
-				false
+						"TargetCharacter" in t &&
+						t.TargetCharacter === Player.MemberNumber
+				) || false
 			);
 		}
 
-		registerSocketListener(
-			"ChatRoomMessage",
-			(
-				/** @type {ChatMessage} */
-				data
-			) => {
-				activityTriggers: for (const trigger of w.bce_ActivityTriggers.filter(
-					(t) => t.Type === data.Type
-				)) {
-					for (const matcher of trigger.Matchers) {
-						if (matcher.Tester.test(data.Content)) {
-							if (matcher.Criteria) {
-								if (
-									matcher.Criteria.SenderIsPlayer &&
-									data.Sender !== Player.MemberNumber
-								) {
-									continue;
-								} else if (
-									matcher.Criteria.TargetIsPlayer &&
-									!dictHasPlayerTarget(data.Dictionary)
-								) {
-									continue;
-								} else if (
-									matcher.Criteria.DictionaryMatchers &&
-									!matcher.Criteria.DictionaryMatchers.some((m) =>
-										data.Dictionary?.find((t) =>
-											// eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-											Object.keys(m).every((k) => m[k] === t[k])
-										)
-									)
-								) {
-									continue;
-								}
-								// Criteria met
-								pushEvent(w.bce_EventExpressions[trigger.Event]);
-							} else if (
-								data.Sender === Player.MemberNumber ||
-								dictHasPlayerTarget(data.Dictionary)
+		registerSocketListener("ChatRoomMessage", (data) => {
+			activityTriggers: for (const trigger of w.bce_ActivityTriggers.filter(
+				(t) => t.Type === data.Type
+			)) {
+				for (const matcher of trigger.Matchers) {
+					if (matcher.Tester.test(data.Content)) {
+						if (matcher.Criteria) {
+							if (
+								matcher.Criteria.SenderIsPlayer &&
+								data.Sender !== Player.MemberNumber
 							) {
-								// Lacking criteria, check for presence of player as source or target
-								pushEvent(w.bce_EventExpressions[trigger.Event]);
-								break activityTriggers;
+								continue;
+							} else if (
+								matcher.Criteria.TargetIsPlayer &&
+								!dictHasPlayerTarget(data.Dictionary)
+							) {
+								continue;
+							} else if (
+								matcher.Criteria.DictionaryMatchers &&
+								!matcher.Criteria.DictionaryMatchers.some((m) =>
+									data.Dictionary?.find((t) =>
+										// eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+										Object.keys(m).every((k) => m[k] === t[k])
+									)
+								)
+							) {
+								continue;
 							}
+							// Criteria met
+							pushEvent(w.bce_EventExpressions[trigger.Event]);
+						} else if (
+							data.Sender === Player.MemberNumber ||
+							dictHasPlayerTarget(data.Dictionary)
+						) {
+							// Lacking criteria, check for presence of player as source or target
+							pushEvent(w.bce_EventExpressions[trigger.Event]);
+							break activityTriggers;
 						}
 					}
 				}
 			}
-		);
+		});
 
-		/** @type {(faceComponent: string) => [string | null, boolean]} */
+		/** @type {(faceComponent: string) => [ExpressionName, boolean]} */
 		function expression(t) {
 			const properties =
 				Player.Appearance.filter((a) => a.Asset.Group.Name === t)[0]
@@ -5186,7 +5244,7 @@ async function ForBetterClub() {
 			return [properties?.Expression || null, !properties?.RemoveTimer];
 		}
 
-		/** @type {(faceComponent: string, newExpression: string, color: string) => void} */
+		/** @type {(faceComponent: string, newExpression: ExpressionName, color: string | string[]) => void} */
 		function setExpression(t, n, color) {
 			if (!n) {
 				n = null;
@@ -5385,7 +5443,7 @@ async function ForBetterClub() {
 				poses.includes(p.Name.toLowerCase())
 			).map((p) => p.Name);
 			for (const poseName of poseNames) {
-				CharacterSetActivePose(Player, poseName, false);
+				PoseSetActive(Player, poseName, false);
 			}
 		}
 
@@ -5455,7 +5513,7 @@ async function ForBetterClub() {
 			"CharacterSetFacialExpression",
 			HOOK_PRIORITIES.OverrideBehaviour,
 			/**
-			 * @param {[Character, string, string | null, number, string | null]} args
+			 * @param {Parameters<typeof CharacterSetFacialExpression>} args
 			 */
 			(args, next) => {
 				// eslint-disable-next-line prefer-const
@@ -5509,11 +5567,13 @@ async function ForBetterClub() {
 		);
 
 		SDK.hookFunction(
-			"CharacterSetActivePose",
+			"PoseSetActive",
 			HOOK_PRIORITIES.OverrideBehaviour,
-			(/** @type {[Character, string | string[] | null]} */ args, next) => {
-				const [C] = args;
-				let [, Pose] = args;
+			/**
+			 * @param {Parameters<typeof PoseSetActive>} args
+			 */
+			(args, next) => {
+				const [C, Pose] = args;
 				if (
 					!isCharacter(C) ||
 					(!isStringOrStringArray(Pose) && Pose !== null) ||
@@ -5523,11 +5583,12 @@ async function ForBetterClub() {
 					return next(args);
 				}
 
-				if (!Pose || (Array.isArray(Pose) && Pose.every((p) => !p))) {
-					Pose = ["BaseUpper", "BaseLower"];
-				}
 				const p = {};
-				p.Pose = Array.isArray(Pose) ? Pose : [Pose];
+				if (!Pose || (Array.isArray(Pose) && Pose.every((pp) => !pp))) {
+					p.Pose = /** @type {AssetPoseName[]} */ (["BaseUpper", "BaseLower"]);
+				} else {
+					p.Pose = [Pose];
+				}
 				p.Duration = -1;
 				const evt = {
 					Type: MANUAL_OVERRIDE_EVENT_TYPE,
@@ -5539,45 +5600,33 @@ async function ForBetterClub() {
 			}
 		);
 
-		registerSocketListener(
-			"ChatRoomSyncPose",
-			(
-				/** @type {{ MemberNumber: number; Character?: Character; Pose: string | string[]; }} */
-				data
-			) => {
-				if (data === null || !isNonNullObject(data)) {
-					return;
-				}
-				if (!bceAnimationEngineEnabled()) {
-					return;
-				}
-				if (data.MemberNumber === Player.MemberNumber) {
-					const poses = Array.isArray(data.Pose) ? data.Pose : [data.Pose];
-					setPoses(poses);
-				}
+		registerSocketListener("ChatRoomSyncPose", (data) => {
+			if (data === null || !isNonNullObject(data)) {
+				return;
 			}
-		);
+			if (!bceAnimationEngineEnabled()) {
+				return;
+			}
+			if (data.MemberNumber === Player.MemberNumber) {
+				const poses = Array.isArray(data.Pose) ? data.Pose : [data.Pose];
+				setPoses(poses);
+			}
+		});
 
-		registerSocketListener(
-			"ChatRoomSyncSingle",
-			(
-				/** @type {ChatRoomSyncSingleEvent} */
-				data
-			) => {
-				if (data === null || !isNonNullObject(data)) {
-					return;
-				}
-				if (!bceAnimationEngineEnabled()) {
-					return;
-				}
-				if (data.Character?.MemberNumber === Player.MemberNumber) {
-					const poses = Array.isArray(data.Character.ActivePose)
-						? data.Character.ActivePose
-						: [data.Character.ActivePose];
-					setPoses(poses);
-				}
+		registerSocketListener("ChatRoomSyncSingle", (data) => {
+			if (data === null || !isNonNullObject(data)) {
+				return;
 			}
-		);
+			if (!bceAnimationEngineEnabled()) {
+				return;
+			}
+			if (data.Character?.MemberNumber === Player.MemberNumber) {
+				const poses = Array.isArray(data.Character.ActivePose)
+					? data.Character.ActivePose
+					: [data.Character.ActivePose];
+				setPoses(poses);
+			}
+		});
 
 		resetExpressionQueue([MANUAL_OVERRIDE_EVENT_TYPE, GAME_TIMED_EVENT_TYPE]);
 
@@ -5672,13 +5721,13 @@ async function ForBetterClub() {
 			/** @type {{ [key: string]: ExpressionStage }} */
 			const desiredExpression = {};
 
-			/** @type {{ [key: string]: { Id: number; Pose: string; Category?: string; Duration: number; Priority: number; Type: string }}} */
+			/** @type {{ [key: string]: { Id: number; Pose: AssetPoseName; Category?: string; Duration: number; Priority: number; Type: string }}} */
 			let desiredPose = {};
 
 			/** @type {{ [key: string]: ExpressionStage }} */
 			const nextExpression = {};
 
-			/** @type {(expression: string, stage: ExpressionStage, next: ExpressionEvent, faceComponent: string) => void} */
+			/** @type {(expression: ExpressionName, stage: ExpressionStage, next: ExpressionEvent, faceComponent: string) => void} */
 			const trySetNextExpression = (e, exp, next, t) => {
 				const priority = exp.Priority || next.Priority || 0;
 				if (!nextExpression[t] || nextExpression[t].Priority <= priority) {
@@ -5851,8 +5900,9 @@ async function ForBetterClub() {
 			}
 
 			// Clean up unused poses
-			let needsPoseUpdate = false,
-				needsRefresh = false;
+			let needsRefresh = false;
+			/** @type {false | AssetPoseName[]} */
+			let poseUpdate = false;
 			if (Player.ActivePose) {
 				for (let i = 0; i < Player.ActivePose.length; i++) {
 					const pose = Player.ActivePose[i];
@@ -5861,9 +5911,9 @@ async function ForBetterClub() {
 						!p?.Category &&
 						Object.values(desiredPose).every((v) => v.Pose !== pose)
 					) {
-						Player.ActivePose.splice(i, 1);
+						poseUpdate = [...Player.ActivePose];
+						poseUpdate.splice(i, 1);
 						i--;
-						needsPoseUpdate = true;
 						needsRefresh = true;
 					}
 				}
@@ -5987,14 +6037,14 @@ async function ForBetterClub() {
 				.map((p) => p.Pose)
 				.filter((p) => !basePoseMatcher.test(p));
 			if (JSON.stringify(Player.ActivePose) !== JSON.stringify(newPose)) {
-				Player.ActivePose = newPose;
-				needsPoseUpdate = true;
+				poseUpdate = newPose;
 				needsRefresh = true;
 			}
 
-			if (needsPoseUpdate) {
+			if (poseUpdate) {
+				Player.ActivePose = poseUpdate;
 				ServerSend("ChatRoomCharacterPoseUpdate", {
-					Pose: Player.ActivePose,
+					Pose: poseUpdate,
 				});
 			}
 
@@ -6123,7 +6173,7 @@ async function ForBetterClub() {
 				const drawnLayer = C.AppearanceLayers.find(
 					(a) => a.Asset === FocusItem.Asset && a.Name === layer.Name
 				);
-				let priority = layer.Priority ?? FocusItem.Asset.Priority ?? -1;
+				let priority = layer.Priority ?? -1;
 				if (
 					isNonNullObject(FocusItem?.Property?.OverridePriority) &&
 					layer.Name in FocusItem.Property.OverridePriority
@@ -6181,6 +6231,9 @@ async function ForBetterClub() {
 			SDK.hookFunction(
 				func,
 				HOOK_PRIORITIES.OverrideBehaviour,
+				/**
+				 * @param {Parameters<typeof DialogLeave> | Parameters<typeof DialogLeaveItemMenu>} args
+				 */
 				// eslint-disable-next-line no-loop-func
 				(args, next) => {
 					if (prioritySubscreen) {
@@ -6195,6 +6248,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"AppearanceExit",
 			HOOK_PRIORITIES.AddBehaviour,
+			/**
+			 * @param {Parameters<typeof AppearanceExit>} args
+			 */
 			(args, next) => {
 				if (CharacterAppearanceMode === "") {
 					ElementRemove(layerPriority);
@@ -6206,6 +6262,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"AppearanceLoad",
 			HOOK_PRIORITIES.AddBehaviour,
+			/**
+			 * @param {Parameters<typeof AppearanceLoad>} args
+			 */
 			(args, next) => {
 				const ret = next(args);
 				ElementCreateInput(layerPriority, "number", "", "20");
@@ -6217,6 +6276,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"AppearanceRun",
 			HOOK_PRIORITIES.OverrideBehaviour,
+			/**
+			 * @param {Parameters<typeof AppearanceRun>} args
+			 */
 			(args, next) => {
 				if (prioritySubscreen) {
 					prioritySubscreenDraw();
@@ -6246,6 +6308,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"AppearanceClick",
 			HOOK_PRIORITIES.OverrideBehaviour,
+			/**
+			 * @param {Parameters<typeof AppearanceClick>} args
+			 */
 			(args, next) => {
 				if (fbcSettings.layeringMenu) {
 					const C = CharacterAppearanceSelection;
@@ -6270,6 +6335,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"DialogDraw",
 			HOOK_PRIORITIES.AddBehaviour,
+			/**
+			 * @param {Parameters<typeof DialogDraw>} args
+			 */
 			(args, next) => {
 				const C = CharacterGetCurrent();
 				const ret = next(args);
@@ -6404,6 +6472,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"DialogDraw",
 			HOOK_PRIORITIES.OverrideBehaviour,
+			/**
+			 * @param {Parameters<typeof DialogDraw>} args
+			 */
 			(args, next) => {
 				const C = CharacterGetCurrent(),
 					focusItem = InventoryGet(C, C.FocusGroup?.Name);
@@ -6425,6 +6496,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"DialogClick",
 			HOOK_PRIORITIES.OverrideBehaviour,
+			/**
+			 * @param {Parameters<typeof DialogClick>} args
+			 */
 			(args, next) => {
 				if (!canAccessLayeringMenus()) {
 					return next(args);
@@ -6560,6 +6634,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"ChatRoomDrawCharacterOverlay",
 			HOOK_PRIORITIES.AddBehaviour,
+			/**
+			 * @param {Parameters<typeof ChatRoomDrawCharacterOverlay>} args
+			 */
 			(args, next) => {
 				const ret = next(args);
 				const [C, CharX, CharY, Zoom] = args;
@@ -6624,34 +6701,38 @@ async function ForBetterClub() {
 			// Don't send hello until settings are loaded
 			return;
 		}
-		/** @type {ChatMessage} */
+		/** @type {ServerChatRoomMessage} */
 		const message = {
 			Type: HIDDEN,
 			Content: BCE_MSG,
 			Sender: Player.MemberNumber,
-			Dictionary: [
-				{
-					message: {
-						type: MESSAGE_TYPES.Hello,
-						version: FBC_VERSION,
-						alternateArousal: !!fbcSettings.alternateArousal,
-						replyRequested: requestReply,
-						capabilities: CAPABILITIES,
-					},
-				},
-			],
+			Dictionary: [],
+		};
+		/** @type {FBCDictionaryEntry} */
+		const fbcMessage = {
+			message: {
+				type: MESSAGE_TYPES.Hello,
+				version: FBC_VERSION,
+				alternateArousal: !!fbcSettings.alternateArousal,
+				replyRequested: requestReply,
+				capabilities: CAPABILITIES,
+			},
 		};
 		if (target) {
 			message.Target = target;
 		}
 		if (fbcSettings.alternateArousal) {
-			message.Dictionary[0].message.progress =
+			fbcMessage.message.progress =
 				Player.BCEArousalProgress || Player.ArousalSettings.Progress || 0;
-			message.Dictionary[0].message.enjoyment = Player.BCEEnjoyment || 1;
+			fbcMessage.message.enjoyment = Player.BCEEnjoyment || 1;
 		}
 		if (fbcSettings.shareAddons) {
-			message.Dictionary[0].message.otherAddons = bcModSdk.getModsInfo();
+			fbcMessage.message.otherAddons = bcModSdk.getModsInfo();
 		}
+
+		// @ts-ignore - cannot extend valid dictionary entries to add our type to it, but this is possible within the game's wire format
+		message.Dictionary.push(fbcMessage);
+
 		ServerSend("ChatRoomChat", message);
 	}
 	if (ServerIsConnected && ServerPlayerIsInChatRoom()) {
@@ -6674,7 +6755,7 @@ async function ForBetterClub() {
 		await waitFor(() => ServerSocket && ServerIsConnected);
 
 		/**
-		 * @param {ChatMessage | BCEChatMessage} data
+		 * @param {ServerChatRoomMessage} data
 		 */
 		function parseBCEMessage(data) {
 			/** @type {BCEMessage} */
@@ -6683,9 +6764,15 @@ async function ForBetterClub() {
 				version: null,
 			};
 			if (Array.isArray(data.Dictionary)) {
-				message = data.Dictionary?.find((t) => t.message)?.message || message;
+				const dict = /** @type {FBCDictionaryEntry[]} */ (
+					/** @type {unknown} */ (data.Dictionary)
+				);
+				message = dict?.find((t) => t.message)?.message || message;
 			} else {
-				message = data.Dictionary?.message || message;
+				const dict = /** @type {FBCDictionaryEntry} */ (
+					/** @type {unknown} */ (data.Dictionary)
+				);
+				message = dict?.message || message;
 			}
 			return message;
 		}
@@ -6758,10 +6845,7 @@ async function ForBetterClub() {
 		registerSocketListener(
 			"ChatRoomMessage",
 			// eslint-disable-next-line complexity
-			(
-				/** @type {ChatMessage | BCEChatMessage} */
-				data
-			) => {
+			(data) => {
 				if (data.Type !== HIDDEN) {
 					return;
 				}
@@ -6776,17 +6860,11 @@ async function ForBetterClub() {
 			}
 		);
 
-		registerSocketListener(
-			"ChatRoomSyncMemberJoin",
-			(
-				/** @type {ChatRoomSyncMemberJoinEvent} */
-				data
-			) => {
-				if (data.MemberNumber !== Player.MemberNumber) {
-					sendHello(data.MemberNumber);
-				}
+		registerSocketListener("ChatRoomSyncMemberJoin", (data) => {
+			if (data.SourceMemberNumber !== Player.MemberNumber) {
+				sendHello(data.SourceMemberNumber);
 			}
-		);
+		});
 
 		registerSocketListener("ChatRoomSync", () => {
 			sendHello();
@@ -6824,6 +6902,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"CharacterAppearanceWardrobeLoad",
 			HOOK_PRIORITIES.OverrideBehaviour,
+			/**
+			 * @param {Parameters<typeof CharacterAppearanceWardrobeLoad>} args
+			 */
 			(args, next) => {
 				const [C] = args;
 				if (fbcSettings.privateWardrobe && CurrentScreen === "Appearance") {
@@ -6839,6 +6920,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"AppearanceLoad",
 			HOOK_PRIORITIES.AddBehaviour,
+			/**
+			 * @param {Parameters<typeof AppearanceLoad>} args
+			 */
 			(args, next) => {
 				const ret = next(args);
 				if (inCustomWardrobe) {
@@ -6851,6 +6935,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"AppearanceRun",
 			HOOK_PRIORITIES.AddBehaviour,
+			/**
+			 * @param {Parameters<typeof AppearanceRun>} args
+			 */
 			(args, next) => {
 				if (
 					CharacterAppearanceMode === "Wardrobe" &&
@@ -6872,6 +6959,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"AppearanceClick",
 			HOOK_PRIORITIES.ModifyBehaviourMedium,
+			/**
+			 * @param {Parameters<typeof AppearanceClick>} args
+			 */
 			(args, next) => {
 				if (
 					CharacterAppearanceMode === "Wardrobe" &&
@@ -6888,6 +6978,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"WardrobeLoad",
 			HOOK_PRIORITIES.AddBehaviour,
+			/**
+			 * @param {Parameters<typeof WardrobeLoad>} args
+			 */
 			(args, next) => {
 				appearanceBackup = CharacterAppearanceBackup;
 				return next(args);
@@ -6897,6 +6990,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"WardrobeRun",
 			HOOK_PRIORITIES.AddBehaviour,
+			/**
+			 * @param {Parameters<typeof WardrobeRun>} args
+			 */
 			(args, next) => {
 				const playerBackup = Player;
 				// Replace Player with target character in rendering
@@ -6929,6 +7025,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"WardrobeClick",
 			HOOK_PRIORITIES.ModifyBehaviourMedium,
+			/**
+			 * @param {Parameters<typeof WardrobeClick>} args
+			 */
 			(args, next) => {
 				if (MouseIn(10, 74, 64, 64)) {
 					excludeBodyparts = !excludeBodyparts;
@@ -6941,6 +7040,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"WardrobeExit",
 			HOOK_PRIORITIES.OverrideBehaviour,
+			/**
+			 * @param {Parameters<typeof WardrobeExit>} args
+			 */
 			(args, next) => {
 				if (!inCustomWardrobe) {
 					return next(args);
@@ -6954,7 +7056,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"WardrobeFastLoad",
 			HOOK_PRIORITIES.OverrideBehaviour,
-			/** @type {(args: [Character, number, boolean], next: (args: [Character, number, boolean]) => unknown) => unknown} */
+			/**
+			 * @param {Parameters<typeof WardrobeFastLoad>} args
+			 */
 			(args, next) => {
 				let [C] = args;
 				const base = C.Appearance.filter(
@@ -6982,6 +7086,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"WardrobeFastSave",
 			HOOK_PRIORITIES.OverrideBehaviour,
+			/**
+			 * @param {Parameters<typeof WardrobeFastSave>} args
+			 */
 			(args, next) => {
 				const [C] = args;
 				if (inCustomWardrobe && isCharacter(C) && C.IsPlayer()) {
@@ -6994,7 +7101,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"ServerPlayerIsInChatRoom",
 			HOOK_PRIORITIES.AddBehaviour,
-			/** @type {(args: [], next: (args: []) => boolean) => boolean} */
+			/**
+			 * @param {Parameters<typeof ServerPlayerIsInChatRoom>} args
+			 */
 			(args, next) =>
 				(inCustomWardrobe && CharacterAppearanceReturnRoom === "ChatRoom") ||
 				next(args)
@@ -7075,6 +7184,7 @@ async function ForBetterClub() {
 			}
 		);
 
+		/*
 		SDK.hookFunction(
 			"ValidationSanitizeProperties",
 			HOOK_PRIORITIES.AddBehaviour,
@@ -7101,6 +7211,7 @@ async function ForBetterClub() {
 				return changed;
 			}
 		);
+		*/
 
 		SDK.hookFunction(
 			"PropertyAutoPunishParseMessage",
@@ -7184,12 +7295,17 @@ async function ForBetterClub() {
 							{
 								let original = msg;
 								if (
+									// @ts-ignore - BCX's custom dictionary entry, dictionary entries cannot be extended in TS
 									data.Dictionary?.some((d) => d.Tag === BCX_ORIGINAL_MESSAGE)
 								) {
-									original = ChatRoomHTMLEntities(
-										data.Dictionary.find((d) => d.Tag === BCX_ORIGINAL_MESSAGE)
-											.Text
+									const tag = data.Dictionary.find(
+										// @ts-ignore - BCX's custom dictionary entry, dictionary entries cannot be extended in TS
+										(d) => d.Tag === BCX_ORIGINAL_MESSAGE
 									);
+									// @ts-ignore - BCX's custom dictionary entry, dictionary entries cannot be extended in TS
+									// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+									const text = /** @type {string} */ (tag.Text);
+									original = ChatRoomHTMLEntities(text);
 								}
 								if (
 									original.toLowerCase().trim() !== msg.toLowerCase().trim()
@@ -7229,167 +7345,173 @@ async function ForBetterClub() {
 		});
 
 		// ServerSend hook for client-side gagspeak, priority lower than BCX's whisper dictionary hook
-		SDK.hookFunction("ServerSend", 1, (args, next) => {
-			if (args.length < 2) {
-				return next(args);
-			}
-			const [message, data] = args;
-			if (!isString(message) || !isChatMessage(data)) {
-				return next(args);
-			}
-
-			// Lilian's chinese garbler
-			if (fbcSettings.antiAntiGarbleExtra && message == "ChatRoomChat" && data.Type === "Chat") {
-				const gagLevel = getTotalGagLevel(Player);
-				if (gagLevel > 0) {
-					const msg = data.Content;
-					const soundWhitelist = [];
-					if (BCX?.getRuleState("speech_specific_sound")?.inEffect) {
-						for (let word of BCX?.getRuleState("speech_specific_sound")?.customData.soundWhitelist) {
-							word = word.toLocaleLowerCase();
-							if (!soundWhitelist.includes(word)) {
-								soundWhitelist.push(word);
-							}
-						}
-					}
-					const useWhitelist = soundWhitelist.length > 0;
-
-					let garbleSound = [];
-					for (const item of Player.Appearance.filter((x) => x.Craft && x.Craft.Description.includes("[Garble="))) {
-						const match = item.Craft.Description.match(/\[Garble=(.+)\]/u);
-						if (match) {
-							garbleSound = garbleSound.concat(match[1].split(','));
-						}
-					}
-					if (garbleSound.length === 0) {
-						garbleSound = ['呜'];
-					}
-
-					let inOOC = false;
-					let allowHyphen = false;
-					let str = [];
-					let i = 0;
-					while (i < msg.length) {
-						switch (msg[i]) {
-							case "(":
-							case "（":
-								inOOC = true;
-								allowHyphen = false;
-								str.push(msg[i++]);
-								continue;
-							case ")":
-							case "）":
-								inOOC = false;
-								allowHyphen = false;
-								str.push(msg[i++]);
-								continue;
-						}
-						if (inOOC || !/^(\p{L}|\p{N})/u.test(msg[i])) {
-							allowHyphen = false;
-							str.push(msg[i++]);
-							continue;
-						}
-
-						// If in whitelist mode, garble everything else except allowed sounds in whitelist
-						if (useWhitelist) {
-							const bestMatch = Math.max(i, ...soundWhitelist.map(x => matchSound(msg, i, x)));
-							debug(`Try to garble ${msg[i]} at ${i}, bestMatch is ${bestMatch}`);
-							if (bestMatch > i) {
-								allowHyphen = false;
-								str.push(msg.slice(i, bestMatch));
-								i = bestMatch;
-								continue;
-							}
-							const res = garbleMessage(msg[i], garbleSound, allowHyphen);
-							str.push(res[0]);
-							allowHyphen = res[1];
-							i++;
-							continue;
-						} 
-						
-						// In normal mode, do random garbling
-						if (Math.random() * 30 > gagLevel + 6) {
-							allowHyphen = false;
-							str.push(msg[i++]);
-							continue;
-						} else {
-							const res = garbleMessage(msg[i], garbleSound, allowHyphen);
-							str.push(res[0]);
-							allowHyphen = res[1];
-							i++;
-							continue;
-						}
-					}
-					str.push(GAGBYPASSINDICATOR);
-					data.Content = str.join("");
+		SDK.hookFunction(
+			"ServerSend",
+			HOOK_PRIORITIES.Observe,
+			/**
+			 * @param {Parameters<typeof ServerSend>} args
+			 */ (args, next) => {
+				if (args.length < 2) {
+					return next(args);
 				}
-				return next([message, data, ...args.slice(2)]);
-			}
-
-			// Original AntiAntiGarble behavior
-			if (message === "ChatRoomChat") {
-				switch (data.Type) {
-					case "Whisper":
-						{
-							const idx = data.Dictionary?.findIndex(
-								(d) => d.Tag === BCX_ORIGINAL_MESSAGE
-							);
-							if (
-								idx >= 0 &&
-								(fbcSettings.antiAntiGarble ||
-									fbcSettings.antiAntiGarbleStrong ||
-									fbcSettings.antiAntiGarbleExtra)
-							) {
-								data.Dictionary.splice(idx, 1);
-							}
-						}
-						break;
-					case "Chat":
-						{
-							const gagLevel = SpeechGetTotalGagLevel(Player);
-							if (gagLevel > 0) {
-								if (fbcSettings.antiAntiGarble) {
-									data.Content =
-										SpeechGarbleByGagLevel(1, data.Content) +
-										GAGBYPASSINDICATOR;
-								} else if (fbcSettings.antiAntiGarbleExtra && gagLevel > 24) {
-									const icIndicator = "\uF124";
-									let inOOC = false;
-									data.Content = `${data.Content.split("")
-										.map((c) => {
-											switch (c) {
-												case "(":
-													inOOC = true;
-													return c;
-												case ")":
-													inOOC = false;
-													return c;
-												default:
-													return inOOC ? c : icIndicator;
-											}
-										})
-										.join("")
-										.replace(
-											new RegExp(`${icIndicator}+`, "gu"),
-											"m"
-										)}${GAGBYPASSINDICATOR}`;
-								} else if (
-									fbcSettings.antiAntiGarbleStrong ||
-									fbcSettings.antiAntiGarbleExtra
-								) {
-									data.Content =
-										SpeechGarbleByGagLevel(gagLevel, data.Content) +
-										GAGBYPASSINDICATOR;
+				const [message, data] = args;
+				if (!isString(message) || !isChatMessage(data)) {
+					return next(args);
+				}
+				// Lilian's chinese garbler
+				if (fbcSettings.antiAntiGarbleExtra && message == "ChatRoomChat" && data.Type === "Chat") {
+					const gagLevel = getTotalGagLevel(Player);
+					if (gagLevel > 0) {
+						const msg = data.Content;
+						const soundWhitelist = [];
+						if (BCX?.getRuleState("speech_specific_sound")?.inEffect) {
+							for (let word of BCX?.getRuleState("speech_specific_sound")?.customData.soundWhitelist) {
+								word = word.toLocaleLowerCase();
+								if (!soundWhitelist.includes(word)) {
+									soundWhitelist.push(word);
 								}
 							}
 						}
-						break;
-					default:
-						break;
+						const useWhitelist = soundWhitelist.length > 0;
+
+						let garbleSound = [];
+						for (const item of Player.Appearance.filter((x) => x.Craft && x.Craft.Description.includes("[Garble="))) {
+							const match = item.Craft.Description.match(/\[Garble=(.+)\]/u);
+							if (match) {
+								garbleSound = garbleSound.concat(match[1].split(','));
+							}
+						}
+						if (garbleSound.length === 0) {
+							garbleSound = ['呜'];
+						}
+
+						let inOOC = false;
+						let allowHyphen = false;
+						let str = [];
+						let i = 0;
+						while (i < msg.length) {
+							switch (msg[i]) {
+								case "(":
+								case "（":
+									inOOC = true;
+									allowHyphen = false;
+									str.push(msg[i++]);
+									continue;
+								case ")":
+								case "）":
+									inOOC = false;
+									allowHyphen = false;
+									str.push(msg[i++]);
+									continue;
+							}
+							if (inOOC || !/^(\p{L}|\p{N})/u.test(msg[i])) {
+								allowHyphen = false;
+								str.push(msg[i++]);
+								continue;
+							}
+
+							// If in whitelist mode, garble everything else except allowed sounds in whitelist
+							if (useWhitelist) {
+								const bestMatch = Math.max(i, ...soundWhitelist.map(x => matchSound(msg, i, x)));
+								debug(`Try to garble ${msg[i]} at ${i}, bestMatch is ${bestMatch}`);
+								if (bestMatch > i) {
+									allowHyphen = false;
+									str.push(msg.slice(i, bestMatch));
+									i = bestMatch;
+									continue;
+								}
+								const res = garbleMessage(msg[i], garbleSound, allowHyphen);
+								str.push(res[0]);
+								allowHyphen = res[1];
+								i++;
+								continue;
+							} 
+							
+							// In normal mode, do random garbling
+							if (Math.random() * 30 > gagLevel + 6) {
+								allowHyphen = false;
+								str.push(msg[i++]);
+								continue;
+							} else {
+								const res = garbleMessage(msg[i], garbleSound, allowHyphen);
+								str.push(res[0]);
+								allowHyphen = res[1];
+								i++;
+								continue;
+							}
+						}
+						str.push(GAGBYPASSINDICATOR);
+						data.Content = str.join("");
+					}
+					return next([message, data, ...args.slice(2)]);
 				}
+
+				// Original AntiAntiGarble behavior
+				if (message === "ChatRoomChat") {
+					switch (data.Type) {
+						case "Whisper":
+							{
+								const idx = data.Dictionary?.findIndex(
+									// @ts-ignore - BCX's custom dictionary entry, dictionary entries cannot be extended in TS
+									(d) => d.Tag === BCX_ORIGINAL_MESSAGE
+								);
+								if (
+									idx >= 0 &&
+									(fbcSettings.antiAntiGarble ||
+										fbcSettings.antiAntiGarbleStrong ||
+										fbcSettings.antiAntiGarbleExtra)
+								) {
+									data.Dictionary.splice(idx, 1);
+								}
+							}
+							break;
+						case "Chat":
+							{
+								const gagLevel = SpeechGetTotalGagLevel(Player);
+								if (gagLevel > 0) {
+									if (fbcSettings.antiAntiGarble) {
+										data.Content =
+											SpeechGarbleByGagLevel(1, data.Content) +
+											GAGBYPASSINDICATOR;
+									} else if (fbcSettings.antiAntiGarbleExtra && gagLevel > 24) {
+										const icIndicator = "\uF124";
+										let inOOC = false;
+										data.Content = `${data.Content.split("")
+											.map((c) => {
+												switch (c) {
+													case "(":
+														inOOC = true;
+														return c;
+													case ")":
+														inOOC = false;
+														return c;
+													default:
+														return inOOC ? c : icIndicator;
+												}
+											})
+											.join("")
+											.replace(
+												new RegExp(`${icIndicator}+`, "gu"),
+												"m"
+											)}${GAGBYPASSINDICATOR}`;
+									} else if (
+										fbcSettings.antiAntiGarbleStrong ||
+										fbcSettings.antiAntiGarbleExtra
+									) {
+										data.Content =
+											SpeechGarbleByGagLevel(gagLevel, data.Content) +
+											GAGBYPASSINDICATOR;
+									}
+								}
+							}
+							break;
+						default:
+							break;
+					}
+				}
+				return next([message, data, ...args.slice(2)]);
 			}
-			return next([message, data, ...args.slice(2)]);
-		});
+		);
 
 		// X, Y, width, height. X and Y centered.
 		const gagAntiCheatMenuPosition = /** @type {const} */ ([
@@ -7402,6 +7524,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"ChatRoomRun",
 			HOOK_PRIORITIES.ModifyBehaviourHigh,
+			/**
+			 * @param {Parameters<typeof ChatRoomRun>} args
+			 */
 			(args, nextFunc) => {
 				const ret = nextFunc(args);
 
@@ -7473,6 +7598,7 @@ async function ForBetterClub() {
 					undefined,
 					// eslint-disable-next-line no-undefined
 					undefined,
+					// @ts-ignore - patched to accept extra params
 					tooltipPosition
 				);
 
@@ -7502,6 +7628,7 @@ async function ForBetterClub() {
 							undefined,
 							tooltipPosition,
 					  ];
+				// @ts-ignore - patched to accept extra params
 				DrawBackNextButton(...gagCheatMenuPosition, ...gagCheatMenuParams);
 
 				return ret;
@@ -7511,6 +7638,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"ChatRoomClick",
 			HOOK_PRIORITIES.ModifyBehaviourHigh,
+			/**
+			 * @param {Parameters<typeof ChatRoomClick>} args
+			 */
 			(args, nextFunc) => {
 				if (fbcSettings.showQuickAntiGarble && !fbcSettings.discreetMode) {
 					if (MouseIn(...gagAntiCheatMenuPosition)) {
@@ -7573,55 +7703,6 @@ async function ForBetterClub() {
 			CurrentScreenFunctions.Resize = ChatRoomResize;
 			ChatRoomResize(false);
 		}
-	}
-
-	let callFunction = "";
-	async function antiLoosen() {
-		await waitFor(() => !!ServerSocket && ServerIsConnected);
-		// Anti-cheat on owner lock
-		SDK.hookFunction(
-			"ValidationResolveModifyDiff",
-			HOOK_PRIORITIES.AddBehaviour,
-			(args, next) => {
-				const [previousItem, newItem, params] = args;
-				const lock = InventoryGetLock(previousItem);
-				const C = params.C;
-				const fromOwner = params.fromOwner;
-				const previousFactor = previousItem.Difficulty - previousItem.Asset.Difficulty;
-				let valid = true;
-				if (fbcSettings.antiLoosenOwnerLock) {
-					if (C.ID === 0 && callFunction === "ServerAppearanceLoadFromBundle" && newItem.Difficulty !== previousItem.Difficulty && !fromOwner && (previousItem.Asset.OwnerOnly || (lock && lock.Asset.OwnerOnly))) {
-						newItem.Difficulty = previousItem.Difficulty;
-						valid = false;
-					}
-					if (C.ID === 0 && callFunction === "ChatRoomSyncItem" && newItem.Difficulty !== previousFactor && !fromOwner && (previousItem.Asset.OwnerOnly || (lock && lock.Asset.OwnerOnly))) {
-						newItem.Difficulty = previousFactor;
-						valid = false;
-					}
-				}
-				let result = next(args);
-				result.valid = result.valid && valid;
-				return result;
-			}
-		);
-
-		SDK.hookFunction(
-			"ServerAppearanceLoadFromBundle",
-			HOOK_PRIORITIES.Observe,
-			(args, next) => {
-				callFunction = "ServerAppearanceLoadFromBundle";
-				return next(args);
-			}
-		);
-
-		SDK.hookFunction(
-			"ChatRoomSyncItem",
-			HOOK_PRIORITIES.Observe,
-			(args, next) => {
-				callFunction = "ChatRoomSyncItem";
-				return next(args);
-			}
-		);
 	}
 
 	async function alternateArousal() {
@@ -7701,21 +7782,28 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"ActivityChatRoomArousalSync",
 			HOOK_PRIORITIES.Observe,
+			/**
+			 * @param {Parameters<typeof ActivityChatRoomArousalSync>} args
+			 */
 			(args, next) => {
 				const [C] = args;
 				if (isCharacter(C) && C.IsPlayer() && CurrentScreen === "ChatRoom") {
+					/** @type {ServerChatRoomMessage} */
 					const message = {
 						Type: HIDDEN,
 						Content: BCE_MSG,
-						Dictionary: {
-							message: {
-								type: MESSAGE_TYPES.ArousalSync,
-								version: FBC_VERSION,
-								alternateArousal: fbcSettings.alternateArousal,
-								progress: C.BCEArousalProgress,
-								enjoyment: C.BCEEnjoyment,
+						Dictionary: [
+							{
+								// @ts-ignore - cannot extend valid dictionary entries to add our type to it, but this is possible within the game's wire format
+								message: {
+									type: MESSAGE_TYPES.ArousalSync,
+									version: FBC_VERSION,
+									alternateArousal: fbcSettings.alternateArousal,
+									progress: C.BCEArousalProgress,
+									enjoyment: C.BCEEnjoyment,
+								},
 							},
-						},
+						],
 					};
 					ServerSend("ChatRoomChat", message);
 				}
@@ -7726,6 +7814,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"ActivitySetArousal",
 			HOOK_PRIORITIES.AddBehaviour,
+			/**
+			 * @param {Parameters<typeof ActivitySetArousal>} args
+			 */
 			(args, next) => {
 				const [C, Progress] = args;
 				const ret = next(args);
@@ -7743,6 +7834,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"ActivitySetArousalTimer",
 			HOOK_PRIORITIES.AddBehaviour,
+			/**
+			 * @param {Parameters<typeof ActivitySetArousalTimer>} args
+			 */
 			(args, next) => {
 				const [C, , , Factor] = args;
 				if (isCharacter(C) && typeof Factor === "number") {
@@ -7755,6 +7849,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"ActivityTimerProgress",
 			HOOK_PRIORITIES.AddBehaviour,
+			/**
+			 * @param {Parameters<typeof ActivityTimerProgress>} args
+			 */
 			(args, next) => {
 				const [C, progress] = args;
 				if (isCharacter(C) && typeof progress === "number") {
@@ -7876,38 +7973,33 @@ async function ForBetterClub() {
 
 	async function autoGhostBroadcast() {
 		await waitFor(() => !!ServerSocket && ServerIsConnected);
-		registerSocketListener(
-			"ChatRoomSyncMemberJoin",
-			(
-				/** @type {ChatRoomSyncMemberJoinEvent} */
-				data
-			) => {
-				if (
-					fbcSettings.ghostNewUsers &&
-					Date.now() - data.Character.Creation < 30000
-				) {
-					ChatRoomListManipulation(
-						Player.BlackList,
-						true,
-						data.Character.MemberNumber
-					);
-					ChatRoomListManipulation(
-						Player.GhostList,
-						true,
-						data.Character.MemberNumber
-					);
-					debug(
-						"Blacklisted",
-						data.Character.Name,
-						CharacterNickname(data.Character),
-						data.Character.MemberNumber,
-						"registered",
-						(Date.now() - data.Character.Creation) / 1000,
-						"seconds ago"
-					);
-				}
+		registerSocketListener("ChatRoomSyncMemberJoin", (data) => {
+			if (
+				fbcSettings.ghostNewUsers &&
+				Date.now() - data.Character.Creation < 30000
+			) {
+				ChatRoomListManipulation(
+					Player.BlackList,
+					true,
+					data.Character.MemberNumber.toString()
+				);
+				ChatRoomListManipulation(
+					Player.GhostList,
+					true,
+					data.Character.MemberNumber.toString()
+				);
+				debug(
+					"Blacklisted",
+					data.Character.Name,
+					// @ts-ignore - CharacterNickname works with this too
+					CharacterNickname(data.Character),
+					data.Character.MemberNumber,
+					"registered",
+					(Date.now() - data.Character.Creation) / 1000,
+					"seconds ago"
+				);
 			}
-		);
+		});
 	}
 
 	async function blindWithoutGlasses() {
@@ -7954,10 +8046,16 @@ async function ForBetterClub() {
 			}
 		}
 
-		SDK.hookFunction("GameRun", HOOK_PRIORITIES.Observe, (args, next) => {
-			checkBlindness();
-			return next(args);
-		});
+		SDK.hookFunction(
+			"GameRun",
+			HOOK_PRIORITIES.Observe,
+			/**
+			 * @param {Parameters<typeof GameRun>} args
+			 */ (args, next) => {
+				checkBlindness();
+				return next(args);
+			}
+		);
 	}
 
 	async function friendPresenceNotifications() {
@@ -7983,89 +8081,83 @@ async function ForBetterClub() {
 
 		/** @type {Friend[]} */
 		let lastFriends = [];
-		registerSocketListener(
-			"AccountQueryResult",
-			(
-				/** @type {{ Query: string; Result: Friend[] }} */
-				data
-			) => {
-				if (
-					CurrentScreen === "FriendList" ||
-					CurrentScreen === "Relog" ||
-					CurrentScreen === "Login"
-				) {
-					return;
-				}
-				if (!fbcSettings.friendPresenceNotifications) {
-					return;
-				}
-				if (data.Query !== "OnlineFriends") {
-					return;
-				}
-				const friendMemberNumbers = data.Result.map((f) => f.MemberNumber),
-					offlineFriends = lastFriends
-						.map((f) => f.MemberNumber)
-						.filter((f) => !friendMemberNumbers.includes(f)),
-					onlineFriends = friendMemberNumbers.filter(
-						(f) => !lastFriends.some((ff) => ff.MemberNumber === f)
-					);
-				if (onlineFriends.length) {
-					const list = onlineFriends
-						.map((f) => {
-							const { MemberNumber, MemberName } = data.Result.find(
-								(d) => d.MemberNumber === f
-							);
-							return `${MemberName} (${MemberNumber})`;
-						})
-						.join(", ");
-					if (
-						fbcSettings.friendNotificationsInChat &&
-						CurrentScreen === "ChatRoom"
-					) {
-						fbcChatNotify(displayText(`Now online: $list`, { $list: list }));
-					} else {
-						fbcNotify(displayText(`Now online: $list`, { $list: list }), 5000, {
-							ClickAction: BEEP_CLICK_ACTIONS.FriendList,
-						});
-					}
-				}
-				if (fbcSettings.friendOfflineNotifications && offlineFriends.length) {
-					const list = offlineFriends
-						.map((f) => {
-							const { MemberNumber, MemberName } = lastFriends.find(
-								(d) => d.MemberNumber === f
-							);
-							return `${MemberName} (${MemberNumber})`;
-						})
-						.join(", ");
-					if (
-						fbcSettings.friendNotificationsInChat &&
-						CurrentScreen === "ChatRoom"
-					) {
-						fbcChatNotify(displayText(`Now offline: $list`, { $list: list }));
-					} else {
-						fbcNotify(
-							displayText(`Now offline: $list`, { $list: list }),
-							5000,
-							{
-								ClickAction: BEEP_CLICK_ACTIONS.FriendList,
-							}
-						);
-					}
-				}
-				lastFriends = data.Result;
+		registerSocketListener("AccountQueryResult", (data) => {
+			if (
+				CurrentScreen === "FriendList" ||
+				CurrentScreen === "Relog" ||
+				CurrentScreen === "Login"
+			) {
+				return;
 			}
-		);
+			if (!fbcSettings.friendPresenceNotifications) {
+				return;
+			}
+			if (data.Query !== "OnlineFriends") {
+				return;
+			}
+			const friendMemberNumbers = data.Result.map((f) => f.MemberNumber),
+				offlineFriends = lastFriends
+					.map((f) => f.MemberNumber)
+					.filter((f) => !friendMemberNumbers.includes(f)),
+				onlineFriends = friendMemberNumbers.filter(
+					(f) => !lastFriends.some((ff) => ff.MemberNumber === f)
+				);
+			if (onlineFriends.length) {
+				const list = onlineFriends
+					.map((f) => {
+						const { MemberNumber, MemberName } = data.Result.find(
+							(d) => d.MemberNumber === f
+						);
+						return `${MemberName} (${MemberNumber})`;
+					})
+					.join(", ");
+				if (
+					fbcSettings.friendNotificationsInChat &&
+					CurrentScreen === "ChatRoom"
+				) {
+					fbcChatNotify(displayText(`Now online: $list`, { $list: list }));
+				} else {
+					fbcNotify(displayText(`Now online: $list`, { $list: list }), 5000, {
+						ClickAction: BEEP_CLICK_ACTIONS.FriendList,
+					});
+				}
+			}
+			if (fbcSettings.friendOfflineNotifications && offlineFriends.length) {
+				const list = offlineFriends
+					.map((f) => {
+						const { MemberNumber, MemberName } = lastFriends.find(
+							(d) => d.MemberNumber === f
+						);
+						return `${MemberName} (${MemberNumber})`;
+					})
+					.join(", ");
+				if (
+					fbcSettings.friendNotificationsInChat &&
+					CurrentScreen === "ChatRoom"
+				) {
+					fbcChatNotify(displayText(`Now offline: $list`, { $list: list }));
+				} else {
+					fbcNotify(displayText(`Now offline: $list`, { $list: list }), 5000, {
+						ClickAction: BEEP_CLICK_ACTIONS.FriendList,
+					});
+				}
+			}
+			lastFriends = data.Result;
+		});
 
 		SDK.hookFunction(
 			"ServerClickBeep",
 			HOOK_PRIORITIES.OverrideBehaviour,
+			/**
+			 * @param {Parameters<typeof ServerClickBeep>} args
+			 */
 			(args, next) => {
 				if (
 					ServerBeep.Timer > Date.now() &&
 					MouseIn(CurrentScreen === "ChatRoom" ? 0 : 500, 0, 1000, 50) &&
 					CurrentScreen !== "FriendList"
 				) {
+					// @ts-ignore - ClickAction is not in the original game, but we specify it above for ServerBeeps
 					switch (ServerBeep.ClickAction) {
 						case BEEP_CLICK_ACTIONS.FriendList:
 							ServerOpenFriendList();
@@ -8260,7 +8352,7 @@ async function ForBetterClub() {
 				ChatRoomListManipulation(
 					Player.BlackList,
 					true,
-					sourceCharacter.MemberNumber
+					sourceCharacter.MemberNumber.toString()
 				);
 				fbcChatNotify(displayText(`[AntiCheat] ${sourceName} blacklisted.`));
 			}
@@ -8270,13 +8362,19 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"ChatRoomSyncItem",
 			HOOK_PRIORITIES.OverrideBehaviour,
-			/** @type {(args: [ChatRoomSyncItemEvent], next: (args: [ChatRoomSyncItemEvent]) => void) => void} */
+			/**
+			 * @param {Parameters<typeof ChatRoomSyncItem>} args
+			 */
 			(args, next) => {
 				const [data] = args;
 				if (!fbcSettings.itemAntiCheat) {
 					return next(args);
 				}
-				if (data?.Item?.Target !== Player.MemberNumber) {
+				// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+				const item = /** @type {{ Target: number; } & ItemBundle} */ (
+					data?.Item
+				);
+				if (item?.Target !== Player.MemberNumber) {
 					return next(args);
 				}
 				if (Player.WhiteList.includes(data.Source)) {
@@ -8292,7 +8390,7 @@ async function ForBetterClub() {
 					Player.Appearance.some((a) => a.Asset.Name === "FuturisticHarness") ||
 					ignoreLocks;
 				const oldItem = Player.Appearance.find(
-					(i) => i.Asset.Group.Name === data.Item.Group
+					(i) => i.Asset.Group.Name === item.Group
 				);
 				const oldItemBundle = oldItem
 					? ServerAppearanceBundle([oldItem])[0]
@@ -8300,7 +8398,7 @@ async function ForBetterClub() {
 				const result = validateSingleItemChange(
 					sourceCharacter,
 					oldItemBundle,
-					data.Item,
+					item,
 					ignoreLocks,
 					ignoreColors
 				);
@@ -8315,7 +8413,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"ChatRoomSyncSingle",
 			HOOK_PRIORITIES.OverrideBehaviour,
-			/** @type {(args: [ChatRoomSyncSingleEvent], next: (args: [ChatRoomSyncSingleEvent]) => void) => void} */
+			/**
+			 * @param {Parameters<typeof ChatRoomSyncSingle>} args
+			 */
 			(args, next) => {
 				const [data] = args;
 				if (!fbcSettings.itemAntiCheat) {
@@ -8485,12 +8585,14 @@ async function ForBetterClub() {
 
 			/** @type {(c: Character) => void} */
 			const appendDialog = (c) => {
-				if (!c.Dialog || c.Dialog.some((v) => v.Modded)) {
+				// @ts-ignore - FBC is not a valid property in the game, but we use it here to mark that we've already added the dialog
+				if (!c.Dialog || c.Dialog.some((v) => v.FBC)) {
 					return;
 				}
 				c.Dialog.splice(
 					idx,
 					0,
+					// @ts-ignore - FBC is not a valid property in the game, but we use it here to mark that we've already added the dialog
 					...clubSlaveDialog.map((v) => ({
 						Stage: v[0],
 						NextStage: v[1],
@@ -8504,7 +8606,7 @@ async function ForBetterClub() {
 							(v[4].trim().substring(0, 6) === "Dialog" ? "" : "ChatRoom") +
 							v[4],
 						Prerequisite: v[5],
-						Modded: true,
+						FBC: true,
 					}))
 				);
 			};
@@ -8518,6 +8620,9 @@ async function ForBetterClub() {
 			SDK.hookFunction(
 				"CharacterBuildDialog",
 				HOOK_PRIORITIES.AddBehaviour,
+				/**
+				 * @param {Parameters<typeof CharacterBuildDialog>} args
+				 */
 				(args, next) => {
 					const ret = next(args);
 					const [C] = args;
@@ -8530,18 +8635,21 @@ async function ForBetterClub() {
 		})();
 
 		w.bceSendToClubSlavery = function () {
-			/** @type {BCEChatMessage} */
+			/** @type {ServerChatRoomMessage} */
 			const message = {
 				Type: HIDDEN,
 				Content: BCE_MSG,
 				Sender: Player.MemberNumber,
-				Dictionary: {
-					message: {
-						type: MESSAGE_TYPES.Activity,
-						version: FBC_VERSION,
-						activity: "ClubSlavery",
+				Dictionary: [
+					{
+						// @ts-ignore - cannot extend valid dictionary entries to add our type to it, but this is possible within the game's wire format
+						message: {
+							type: MESSAGE_TYPES.Activity,
+							version: FBC_VERSION,
+							activity: "ClubSlavery",
+						},
 					},
-				},
+				],
 			};
 			ServerSend("ChatRoomChat", message);
 			DialogLeave();
@@ -8598,7 +8706,8 @@ async function ForBetterClub() {
 
 			await waitFor(() => !!ManagementMistress);
 
-			CharacterSetActivePose(Player, "Kneel", false);
+			PoseSetActive(Player, "Kneel", false);
+
 			// eslint-disable-next-line require-atomic-updates
 			ManagementMistress.Stage = "320";
 			ManagementMistress.CurrentDialog = displayText(
@@ -8649,6 +8758,10 @@ async function ForBetterClub() {
 		const messageInput = document.createElement("textarea");
 		messageInput.id = "bce-message-input";
 		messageInput.setAttribute("maxlength", "2000");
+		messageInput.addEventListener("keydown", (e) => {
+			// MBCHC compatibility: prevent chatroom keydown events from triggering at document level
+			e.stopPropagation();
+		});
 
 		const friendSearch = document.createElement("input");
 		friendSearch.id = "bce-friend-search";
@@ -8657,6 +8770,10 @@ async function ForBetterClub() {
 			displayText("Search for a friend")
 		);
 		friendSearch.autocomplete = "off";
+		friendSearch.addEventListener("keydown", (e) => {
+			// MBCHC compatibility: prevent chatroom keydown events from triggering at document level
+			e.stopPropagation();
+		});
 
 		const onlineClass = "bce-friend-list-handshake-completed";
 		const offlineClass = "bce-friend-list-handshake-false";
@@ -8734,7 +8851,7 @@ async function ForBetterClub() {
 			scrollToBottom();
 		};
 
-		/** @type {(friendId: number, sent: boolean, beep: Beep, skipHistory: boolean, createdAt: Date) => void} */
+		/** @type {(friendId: number, sent: boolean, beep: Partial<ServerAccountBeepResponse>, skipHistory: boolean, createdAt: Date) => void} */
 		// eslint-disable-next-line complexity
 		const addMessage = (friendId, sent, beep, skipHistory, createdAt) => {
 			const friend = friendMessages.get(friendId);
@@ -8962,10 +9079,10 @@ async function ForBetterClub() {
 					messageType = "Action";
 				}
 
-				/** @type {Beep} */
+				/** @type {ServerAccountBeepRequest} */
 				const message = {
+					BeepType: "",
 					MemberNumber: activeChat,
-					MemberName: Player.FriendNames.get(activeChat) || "aname",
 					IsSecret: true,
 					Message: `${messageText}\n\n\uf124${JSON.stringify({
 						messageType,
@@ -8975,6 +9092,7 @@ async function ForBetterClub() {
 				addMessage(activeChat, true, message, false, new Date());
 				FriendListBeepLog.push({
 					...message,
+					MemberName: Player.FriendNames.get(activeChat) || "aname",
 					Sent: true,
 					Private: false,
 					Time: new Date(),
@@ -9003,48 +9121,42 @@ async function ForBetterClub() {
 			sortIM();
 		};
 
-		registerSocketListener(
-			"AccountQueryResult",
-			(
-				/** @type {{ Query: string; Result: Friend[] }} */
-				data
-			) => {
-				if (data.Query !== "OnlineFriends") {
-					return;
+		registerSocketListener("AccountQueryResult", (data) => {
+			if (data.Query !== "OnlineFriends") {
+				return;
+			}
+			if (data.Result && fbcSettings.instantMessenger) {
+				const forbid = BCX?.getRuleState("speech_restrict_instant_messenger")?.inEffect;
+				const allowedMembers = forbid ? BCX?.getRuleState("speech_restrict_instant_messenger")?.customData.allowedMembers : [];
+				for (const friend of data.Result) {
+					const f = handleUnseenFriend(friend.MemberNumber);
+					if (!forbid || allowedMembers.includes(friend.MemberNumber)) {
+					    f.online = true;
+						f.statusText.textContent = displayText("Online");
+						f.listElement.classList.remove(offlineClass);
+						f.listElement.classList.add(onlineClass);
+					}
 				}
-				if (data.Result && fbcSettings.instantMessenger) {
-					const forbid = BCX?.getRuleState("speech_restrict_instant_messenger")?.inEffect;
-					const allowedMembers = forbid ? BCX?.getRuleState("speech_restrict_instant_messenger")?.customData.allowedMembers : [];
-					for (const friend of data.Result) {
-						const f = handleUnseenFriend(friend.MemberNumber);
-						if (!forbid || allowedMembers.includes(friend.MemberNumber)) {
-						    f.online = true;
-							f.statusText.textContent = displayText("Online");
-							f.listElement.classList.remove(offlineClass);
-							f.listElement.classList.add(onlineClass);
-						}
-					}
-					for (const friendId of Array.from(friendMessages.keys()).filter(
-						(f) => !data.Result.some((f2) => f2.MemberNumber === f) ||
+				for (const friendId of Array.from(friendMessages.keys()).filter(
+					(f) => !data.Result.some((f2) => f2.MemberNumber === f) ||
 								(forbid && !allowedMembers.includes(f))
-					)) {
-						const f = friendMessages.get(friendId);
-						f.online = false;
-						f.statusText.textContent = displayText("Offline");
-						f.listElement.classList.remove(onlineClass);
-						f.listElement.classList.add(offlineClass);
-					}
-					if (!data.Result.some((f) => f.MemberNumber === activeChat) ||
+				)) {
+					const f = friendMessages.get(friendId);
+					f.online = false;
+					f.statusText.textContent = displayText("Offline");
+					f.listElement.classList.remove(onlineClass);
+					f.listElement.classList.add(offlineClass);
+				}
+				if (!data.Result.some((f) => f.MemberNumber === activeChat) ||
 						(forbid && !allowedMembers.includes(activeChat))) {
-						// Disable input, current user is offline
-						messageInput.disabled = true;
-					} else {
-						// Enable input, current user is online
-						messageInput.disabled = false;
-					}
+					// Disable input, current user is offline
+					messageInput.disabled = true;
+				} else {
+					// Enable input, current user is online
+					messageInput.disabled = false;
 				}
 			}
-		);
+		});
 
 		function sortIM() {
 			[...friendList.children]
@@ -9072,7 +9184,7 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"ServerAccountBeep",
 			HOOK_PRIORITIES.OverrideBehaviour,
-			/** @type {(args: Beep[], next: (args: Beep[]) => void) => void} */
+			/** @type {(args: [ServerAccountBeepResponse], next: (args: [ServerAccountBeepResponse]) => void) => void} */
 			(args, next) => {
 				const [beep] = args;
 				if (
@@ -9090,7 +9202,7 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"ServerSend",
 			HOOK_PRIORITIES.Observe,
-			/** @type {(args: [string, Beep], next: (args: [string, Beep]) => void) => void} */
+			/** @type {(args: [string, ServerAccountBeepResponse], next: (args: [string, ServerAccountBeepResponse]) => void) => void} */
 			(args, next) => {
 				const [command, beep] = args;
 				if (
@@ -9122,7 +9234,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"DrawProcess",
 			HOOK_PRIORITIES.AddBehaviour,
-			/** @type {(args: DOMHighResTimeStamp[], next: (args: DOMHighResTimeStamp[]) => void) => void} */
+			/**
+			 * @param {Parameters<typeof DrawProcess>} args
+			 */
 			(args, next) => {
 				next(args);
 				if (fbcSettings.instantMessenger) {
@@ -9160,7 +9274,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"CommonClick",
 			HOOK_PRIORITIES.OverrideBehaviour,
-			/** @type {(args: (MouseEvent | TouchEvent)[], next: (args: (MouseEvent | TouchEvent)[]) => void) => void} */
+			/**
+			 * @param {Parameters<typeof CommonClick>} args
+			 */
 			(args, next) => {
 				if (fbcSettings.instantMessenger && MouseIn(...buttonPosition())) {
 					if (!container.classList.contains("bce-hidden")) {
@@ -9182,7 +9298,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"NotificationRaise",
 			HOOK_PRIORITIES.ModifyBehaviourHigh,
-			/** @type {(args: [string, Partial<{ body: string }>], next: (args: [string, Partial<{ body: string }>]) => void) => void} */
+			/**
+			 * @param {Parameters<typeof NotificationRaise>} args
+			 */
 			(args, next) => {
 				if (args[0] === "Beep" && args[1].body) {
 					args[1].body = bceStripBeepMetadata(args[1].body);
@@ -9219,6 +9337,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"CharacterDecompressWardrobe",
 			HOOK_PRIORITIES.ModifyBehaviourMedium,
+			/**
+			 * @param {Parameters<typeof CharacterDecompressWardrobe>} args
+			 */
 			(args, next) => {
 				let wardrobe = next(args);
 				if (
@@ -9235,33 +9356,20 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"CharacterCompressWardrobe",
 			HOOK_PRIORITIES.Top,
-			/** @type {(args: (ItemBundle[][] | string)[][], next: (args: (ItemBundle[][] | string)[][]) => string) => string} */
+			/**
+			 * @param {Parameters<typeof CharacterCompressWardrobe>} args
+			 */
 			(args, next) => {
 				const [wardrobe] = args;
 				if (isWardrobe(wardrobe)) {
 					const additionalWardrobe = wardrobe.slice(DEFAULT_WARDROBE_SIZE);
 					if (additionalWardrobe.length > 0) {
-						Player.OnlineSettings.BCEWardrobe = LZString.compressToUTF16(
+						Player.ExtensionSettings.FBCWardrobe = LZString.compressToUTF16(
 							JSON.stringify(additionalWardrobe)
 						);
 						args[0] = wardrobe.slice(0, DEFAULT_WARDROBE_SIZE);
-						ServerAccountUpdate.QueueData({
-							OnlineSettings: Player.OnlineSettings,
-						});
+						ServerPlayerExtensionSettingsSync("FBCWardrobe");
 					}
-				}
-				return next(args);
-			}
-		);
-
-		SDK.hookFunction(
-			"LoginResponse",
-			HOOK_PRIORITIES.Top,
-			/** @type {(args: Character[], next: (args: Character[]) => void) => void} */
-			(args, next) => {
-				const [{ BCEWardrobe }] = args;
-				if (isString(BCEWardrobe)) {
-					Player.BCEWardrobe = BCEWardrobe;
 				}
 				return next(args);
 			}
@@ -9274,20 +9382,19 @@ async function ForBetterClub() {
 			WardrobeSize = EXPANDED_WARDROBE_SIZE;
 			WardrobeFixLength();
 		}
-		if (Player.BCEWardrobe) {
-			Player.OnlineSettings.BCEWardrobe = Player.BCEWardrobe;
-			Player.BCEWardrobe = null;
-			ServerAccountUpdate.QueueData({
-				BCEWardrobe: null,
-				OnlineSettings: Player.OnlineSettings,
-			});
-		}
-		if (Player.OnlineSettings.BCEWardrobe) {
+
+		const wardrobeData =
+			Player.ExtensionSettings.FBCWardrobe || Player.OnlineSettings.BCEWardrobe;
+		if (wardrobeData) {
+			if (Player.OnlineSettings.BCEWardrobe) {
+				Player.ExtensionSettings.FBCWardrobe = wardrobeData;
+				ServerPlayerExtensionSettingsSync("FBCWardrobe");
+				logInfo("Migrated wardrobe from OnlineSettings to ExtensionSettings");
+				delete Player.OnlineSettings.BCEWardrobe;
+			}
 			try {
 				const additionalItemBundle = /** @type {ItemBundle[][]} */ (
-					JSON.parse(
-						LZString.decompressFromUTF16(Player.OnlineSettings.BCEWardrobe)
-					)
+					JSON.parse(LZString.decompressFromUTF16(wardrobeData))
 				);
 				if (isWardrobe(additionalItemBundle)) {
 					for (let i = DEFAULT_WARDROBE_SIZE; i < EXPANDED_WARDROBE_SIZE; i++) {
@@ -9302,8 +9409,9 @@ async function ForBetterClub() {
 				logError("Failed to load extended wardrobe", e);
 				fbcBeepNotify(
 					"Wardrobe error",
-					`Failed to load extended wardrobe.\n\nBackup: ${Player.OnlineSettings.BCEWardrobe}`
+					`Failed to load extended wardrobe.\n\nBackup: ${wardrobeData}`
 				);
+				logInfo("Backup wardrobe", wardrobeData);
 			}
 		}
 		return wardrobe;
@@ -9319,9 +9427,7 @@ async function ForBetterClub() {
 			)
 		);
 		await waitFor(() => !!document.getElementById("TextAreaChatLog"));
-		fbcChatNotify(
-			`For Better Club (formerly BCE - Bondage Club Enhancements) changelog:\n${fbcChangelog}`
-		);
+		fbcChatNotify(`For Better Club (FBC) changelog:\n${fbcChangelog}`);
 	}
 
 	/** @type {(word: string) => URL | false} */
@@ -9573,6 +9679,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"ChatAdminRoomCustomizationClick",
 			HOOK_PRIORITIES.Observe,
+			/**
+			 * @param {Parameters<typeof ChatAdminRoomCustomizationClick>} args
+			 */
 			(args, next) => {
 				for (const s of [
 					ElementValue("InputImageURL").trim(),
@@ -9616,7 +9725,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"DrawImageEx",
 			HOOK_PRIORITIES.Top,
-			/** @type {(args: [string | HTMLImageElement | HTMLCanvasElement], next: (args: [string | HTMLImageElement | HTMLCanvasElement]) => boolean) => boolean} */
+			/**
+			 * @param {Parameters<typeof DrawImageEx>} args
+			 */
 			(args, next) => {
 				if (fbcSettings.discreetMode) {
 					if (!args) {
@@ -9640,6 +9751,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"NotificationTitleUpdate",
 			HOOK_PRIORITIES.Top,
+			/**
+			 * @param {Parameters<typeof NotificationTitleUpdate>} args
+			 */
 			(args, next) => {
 				if (fbcSettings.discreetMode) {
 					const notificationCount = NotificationGetTotalCount(1);
@@ -9658,6 +9772,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"StruggleFlexibilityCheck",
 			HOOK_PRIORITIES.OverrideBehaviour,
+			/**
+			 * @param {Parameters<typeof StruggleFlexibilityCheck>} args
+			 */
 			(args, next) => {
 				if (fbcSettings.autoStruggle) {
 					if (StruggleProgressFlexCircles.length > 0) {
@@ -9719,7 +9836,7 @@ async function ForBetterClub() {
 		ServerCharacterNicknameRegex = /^[\p{L}0-9\p{Z}'-]+$/u;
 	}
 
-	/** @type {(effect: string) => boolean} */
+	/** @type {(effect: EffectName) => boolean} */
 	function addCustomEffect(effect) {
 		let updated = false;
 		const emoticon = Player.Appearance.find((a) => a.Asset.Name === "Emoticon");
@@ -9743,7 +9860,7 @@ async function ForBetterClub() {
 		return updated;
 	}
 
-	/** @type {(effect: string) => boolean} */
+	/** @type {(effect: EffectName) => boolean} */
 	function removeCustomEffect(effect) {
 		const emoticon = Player.Appearance.find((a) => a.Asset.Name === "Emoticon");
 		let updated = false;
@@ -9775,8 +9892,11 @@ async function ForBetterClub() {
 		if (Array.isArray(emoticon.Asset.AllowEffect)) {
 			emoticon.Asset.AllowEffect.push("Leash");
 		} else {
+			// @ts-ignore - not readonly
 			emoticon.Asset.AllowEffect = ["Leash"];
 		}
+		// @ts-ignore - not readonly
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-call
 		emoticon.Asset.AllowEffect.push("BlurLight");
 
 		if (fbcSettings.leashAlways) {
@@ -9929,27 +10049,29 @@ async function ForBetterClub() {
 				Description: displayText(
 					"Shows the battery status of all connected buttplug.io toys"
 				),
-				Action: async () => {
-					if (!client.Connected) {
-						fbcChatNotify("buttplug.io is not connected");
-						return;
-					}
+				Action: () => {
+					(async () => {
+						if (!client.Connected) {
+							fbcChatNotify("buttplug.io is not connected");
+							return;
+						}
 
-					const batteryDevices = client.Devices.filter((dev) =>
-						dev.AllowedMessages.includes(8)
-					);
-					if (batteryDevices.length === 0) {
-						fbcChatNotify("No battery devices connected");
-						return;
-					}
+						const batteryDevices = client.Devices.filter((dev) =>
+							dev.AllowedMessages.includes(8)
+						);
+						if (batteryDevices.length === 0) {
+							fbcChatNotify("No battery devices connected");
+							return;
+						}
 
-					const batteryStatus = await Promise.all(
-						batteryDevices.map((dev) => dev.batteryLevel())
-					);
-					for (let i = 0; i < batteryDevices.length; i++) {
-						const battery = batteryStatus[i] * 100;
-						fbcChatNotify(`${batteryDevices[i].Name}: ${battery}%`);
-					}
+						const batteryStatus = await Promise.all(
+							batteryDevices.map((dev) => dev.batteryLevel())
+						);
+						for (let i = 0; i < batteryDevices.length; i++) {
+							const battery = batteryStatus[i] * 100;
+							fbcChatNotify(`${batteryDevices[i].Name}: ${battery}%`);
+						}
+					})();
 				},
 			});
 
@@ -10051,7 +10173,7 @@ async function ForBetterClub() {
 
 		/** @type {(num: number) => Promise<void>} */
 		async function trimProfiles(num) {
-			/** @type {SavedProfile[]} */
+			/** @type {FBCSavedProfile[]} */
 			let list = await profiles.toArray();
 			// Oldest first
 			list.sort((a, b) => a.seen - b.seen);
@@ -10070,7 +10192,7 @@ async function ForBetterClub() {
 			}
 		}
 
-		/** @type {(characterBundle: NetCharacter) => Promise<void>} */
+		/** @type {(characterBundle: ServerAccountDataSynced) => Promise<void>} */
 		async function saveProfile(characterBundle) {
 			await quotaSafetyCheck();
 
@@ -10113,7 +10235,7 @@ async function ForBetterClub() {
 			"ChatRoomSync",
 			HOOK_PRIORITIES.Top,
 			/**
-			 * @param {ChatRoomSyncEvent[]} args
+			 * @param {Parameters<typeof ChatRoomSync>} args
 			 */
 			(args, next) => {
 				const [data] = args;
@@ -10130,7 +10252,7 @@ async function ForBetterClub() {
 			"ChatRoomSyncSingle",
 			HOOK_PRIORITIES.Top,
 			/**
-			 * @param {ChatRoomSyncSingleEvent[]} args
+			 * @param {Parameters<typeof ChatRoomSyncSingle>} args
 			 */
 			(args, next) => {
 				const [data] = args;
@@ -10144,7 +10266,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"InformationSheetRun",
 			HOOK_PRIORITIES.AddBehaviour,
-			/** @type {(args: unknown[], next: (args: unknown[]) => unknown) => unknown} */
+			/**
+			 * @param {Parameters<typeof InformationSheetRun>} args
+			 */
 			(args, next) => {
 				if (InformationSheetSelection.BCESeen) {
 					w.MainCanvas.getContext("2d").textAlign = "left";
@@ -10158,7 +10282,6 @@ async function ForBetterClub() {
 					);
 					w.MainCanvas.getContext("2d").textAlign = "center";
 				}
-				// eslint-disable-next-line consistent-return
 				return next(args);
 			}
 		);
@@ -10166,11 +10289,13 @@ async function ForBetterClub() {
 		/** @type {(memberNumber: number) => Promise<void>} */
 		async function openCharacter(memberNumber) {
 			try {
-				/** @type {SavedProfile} */
+				/** @type {FBCSavedProfile} */
 				// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
 				const profile = await profiles.get(memberNumber);
 				const C = CharacterLoadOnline(
-					/** @type {NetCharacter} */ (JSON.parse(profile.characterBundle)),
+					/** @type {ServerAccountDataSynced} */ (
+						JSON.parse(profile.characterBundle)
+					),
 					memberNumber
 				);
 				C.BCESeen = profile.seen;
@@ -10190,56 +10315,59 @@ async function ForBetterClub() {
 			Description: displayText(
 				"<filter> - List seen profiles, optionally searching by member number or name"
 			),
-			Action: async (args) => {
-				/** @type {SavedProfile[]} */
-				let list = await profiles.toArray();
-				list = list.filter(
-					(p) =>
-						!args ||
-						p.name.toLowerCase().includes(args) ||
-						p.memberNumber.toString().includes(args) ||
-						p.lastNick?.toLowerCase().includes(args)
-				);
-				list.sort((a, b) => b.seen - a.seen);
-				const matches = list.length;
-				list = list.slice(0, 100);
-				list.sort(
-					(a, b) => -(b.lastNick ?? b.name).localeCompare(a.lastNick ?? a.name)
-				);
-				const lines = list.map((p) => {
-					const div = document.createElement("div");
-					div.textContent = displayText(
-						`$nickAndName ($memberNumber) - Seen: $seen`,
+			Action: (argums) => {
+				(async (args) => {
+					/** @type {FBCSavedProfile[]} */
+					let list = await profiles.toArray();
+					list = list.filter(
+						(p) =>
+							!args ||
+							p.name.toLowerCase().includes(args) ||
+							p.memberNumber.toString().includes(args) ||
+							p.lastNick?.toLowerCase().includes(args)
+					);
+					list.sort((a, b) => b.seen - a.seen);
+					const matches = list.length;
+					list = list.slice(0, 100);
+					list.sort(
+						(a, b) =>
+							-(b.lastNick ?? b.name).localeCompare(a.lastNick ?? a.name)
+					);
+					const lines = list.map((p) => {
+						const div = document.createElement("div");
+						div.textContent = displayText(
+							`$nickAndName ($memberNumber) - Seen: $seen`,
+							{
+								$nickAndName: p.lastNick ? `${p.lastNick} / ${p.name}` : p.name,
+								$memberNumber: p.memberNumber.toString(),
+								$seen: new Date(p.seen).toLocaleDateString(),
+							}
+						);
+						const link = document.createElement("a");
+						link.textContent = displayText("Open");
+						link.href = `#`;
+						link.classList.add("bce-profile-open");
+						link.addEventListener("click", (e) => {
+							e.preventDefault();
+							e.stopPropagation();
+							openCharacter(p.memberNumber);
+						});
+						div.prepend(link);
+						return div;
+					});
+					const header = document.createElement("h3");
+					header.textContent = displayText("Saved Profiles");
+					header.style.marginTop = "0";
+					const footer = document.createElement("div");
+					footer.textContent = displayText(
+						"showing $num most recent of $total total profiles matching search",
 						{
-							$nickAndName: p.lastNick ? `${p.lastNick} / ${p.name}` : p.name,
-							$memberNumber: p.memberNumber.toString(),
-							$seen: new Date(p.seen).toLocaleDateString(),
+							$num: list.length.toLocaleString(),
+							$total: matches.toLocaleString(),
 						}
 					);
-					const link = document.createElement("a");
-					link.textContent = displayText("Open");
-					link.href = `#`;
-					link.classList.add("bce-profile-open");
-					link.addEventListener("click", (e) => {
-						e.preventDefault();
-						e.stopPropagation();
-						openCharacter(p.memberNumber);
-					});
-					div.prepend(link);
-					return div;
-				});
-				const header = document.createElement("h3");
-				header.textContent = displayText("Saved Profiles");
-				header.style.marginTop = "0";
-				const footer = document.createElement("div");
-				footer.textContent = displayText(
-					"showing $num most recent of $total total profiles matching search",
-					{
-						$num: list.length.toLocaleString(),
-						$total: matches.toLocaleString(),
-					}
-				);
-				fbcChatNotify([header, ...lines, footer]);
+					fbcChatNotify([header, ...lines, footer]);
+				})(argums);
 			},
 		});
 
@@ -10295,6 +10423,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"OnlineProfileRun",
 			HOOK_PRIORITIES.OverrideBehaviour,
+			/**
+			 * @param {Parameters<typeof OnlineProfileRun>} args
+			 */
 			(args, next) => {
 				if (inNotes) {
 					DrawText(
@@ -10357,6 +10488,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"OnlineProfileClick",
 			HOOK_PRIORITIES.AddBehaviour,
+			/**
+			 * @param {Parameters<typeof OnlineProfileClick>} args
+			 */
 			(args, next) => {
 				if (inNotes) {
 					if (MouseIn(1720, 60, 90, 90)) {
@@ -10406,6 +10540,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"ChatRoomMessage",
 			HOOK_PRIORITIES.Observe,
+			/**
+			 * @param {Parameters<typeof ChatRoomMessage>} args
+			 */
 			(args, next) => {
 				const ret = next(args);
 				if (
@@ -10415,8 +10552,11 @@ async function ForBetterClub() {
 					Array.isArray(args[0].Dictionary)
 				) {
 					const [message] = args;
+					// @ts-ignore - custom dictionary Tag
 					const tag = message.Dictionary?.find?.((d) => d.Tag === "fbc_nonce");
 					if (tag) {
+						// @ts-ignore - custom dictionary Tag
+						// eslint-disable-next-line @typescript-eslint/restrict-template-expressions
 						const el = document.querySelector(`[data-nonce='${tag.Text}']`);
 						if (el) {
 							el.remove();
@@ -10430,6 +10570,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"ServerSend",
 			HOOK_PRIORITIES.AddBehaviour,
+			/**
+			 * @param {Parameters<typeof ServerSend>} args
+			 */
 			(args, next) => {
 				if (
 					fbcSettings.pendingMessages &&
@@ -10443,7 +10586,9 @@ async function ForBetterClub() {
 					if (nonce >= Number.MAX_SAFE_INTEGER) {
 						nonce = 0;
 					}
+					// @ts-ignore - custom dictionary Tag
 					args[1].Dictionary = addToDictionary(
+						// @ts-ignore - custom dictionary Tag
 						args[1].Dictionary,
 						"fbc_nonce",
 						nonce
@@ -10507,7 +10652,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"DrawCharacter",
 			HOOK_PRIORITIES.ModifyBehaviourLow,
-			/** @type {(args: [Character], next: (args: [Character]) => void) => void} */
+			/**
+			 * @param {Parameters<typeof DrawCharacter>} args
+			 */
 			(args, next) => {
 				const [c] = args;
 				if (!c || !fbcSettings.hideHiddenItemsIcon) {
@@ -10536,7 +10683,7 @@ async function ForBetterClub() {
 						return;
 					}
 					try {
-						const craft = /** @type {Craft} */ (
+						const craft = /** @type {CraftingItem} */ (
 							JSON.parse(LZString.decompressFromBase64(str))
 						);
 						if (!isNonNullObject(craft)) {
@@ -10572,6 +10719,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"CraftingClick",
 			HOOK_PRIORITIES.AddBehaviour,
+			/**
+			 * @param {Parameters<typeof CraftingClick>} args
+			 */
 			(args, next) => {
 				switch (CraftingMode) {
 					case "Name":
@@ -10603,6 +10753,9 @@ async function ForBetterClub() {
 		SDK.hookFunction(
 			"CraftingRun",
 			HOOK_PRIORITIES.ModifyBehaviourMedium,
+			/**
+			 * @param {Parameters<typeof CraftingRun>} args
+			 */
 			(args, next) => {
 				const ret = next(args);
 				if (CraftingMode === "Name") {
@@ -10617,16 +10770,29 @@ async function ForBetterClub() {
 			"DrawItemPreview",
 			HOOK_PRIORITIES.AddBehaviour,
 			/**
-			 * @param {[Item, Character, number, number, {}]} args
-			 * @param {(args: [Item, Character, number, number, {}]) => void} next
+			 * @param {Parameters<typeof DrawItemPreview>} args
 			 */
 			(args, next) => {
 				const ret = next(args);
 				const [item, , x, y] = args;
 				if (item) {
 					const { Craft } = item;
-					if (MouseIn(x, y, 225, 275) && Craft) {
-						drawTooltip(x, y, 225, displayText(Craft.Property), "center");
+					if (
+						MouseIn(
+							x,
+							y,
+							DialogInventoryGrid.itemWidth,
+							DialogInventoryGrid.itemHeight
+						) &&
+						Craft
+					) {
+						drawTooltip(
+							x,
+							y,
+							DialogInventoryGrid.itemWidth,
+							displayText(Craft.Property),
+							"center"
+						);
 						drawTooltip(
 							1000,
 							y - 70,
@@ -10638,6 +10804,64 @@ async function ForBetterClub() {
 						);
 					}
 				}
+				return ret;
+			}
+		);
+	}
+
+	function numericArousalMeters() {
+		let isExpanded = false;
+		let increasing = false;
+		SDK.hookFunction(
+			"DrawArousalMeter",
+			HOOK_PRIORITIES.Observe,
+			/**
+			 * @param {Parameters<typeof DrawArousalMeter>} args
+			 */
+			(args, next) => {
+				const [C] = args;
+				isExpanded = !!C.ArousalZoom;
+				const activityGoing = C.ArousalSettings?.ProgressTimer > 0;
+				const vibed = C.ArousalSettings?.VibratorLevel > 0;
+				const vibedOnEdge =
+					(C.IsEdged() || C.HasEffect("DenialMode")) &&
+					C.ArousalSettings?.Progress >= 95;
+				increasing = activityGoing || (vibed && !vibedOnEdge);
+				const ret = next(args);
+				isExpanded = false;
+				return ret;
+			}
+		);
+
+		SDK.hookFunction(
+			"DrawArousalThermometer",
+			HOOK_PRIORITIES.Observe,
+			/**
+			 * @param {Parameters<typeof DrawArousalThermometer>} args
+			 */ (args, next) => {
+				const ret = next(args);
+				if (fbcSettings.numericArousalMeter && isExpanded) {
+					const [x, y, zoom, progress] = args;
+					let color = "white";
+					if (progress >= 95) {
+						if (increasing) {
+							color = "red";
+						} else {
+							color = "hotpink";
+						}
+					} else if (progress >= 70) {
+						color = "pink";
+					}
+					DrawTextFit(
+						progress.toLocaleString() + (increasing ? "↑" : " "),
+						x + 50 * zoom,
+						y - 30 * zoom,
+						100 * zoom,
+						color,
+						"black"
+					);
+				}
+
 				return ret;
 			}
 		);
@@ -10702,6 +10926,11 @@ async function ForBetterClub() {
 			});
 			input.addEventListener("change", () => {
 				inputValue = input.value;
+			});
+
+			input.addEventListener("keydown", (e) => {
+				// MBCHC compatibility: prevent chatroom keydown events from triggering at document level
+				e.stopPropagation();
 			});
 
 			input.value = opts.input.initial;
@@ -10997,7 +11226,9 @@ async function ForBetterClub() {
 				GameVersion,
 				// !! to avoid passing room name to statbot, only presence inside a room or not
 				InRoom: !!Player.LastChatRoom,
-				InPrivate: !!Player.LastChatRoomPrivate,
+				InPrivate:
+					// @ts-ignore -- LastChatRoomPrivate removed in R99
+					!!Player.LastChatRoomPrivate || !!Player.LastChatRoom?.Private,
 				// @ts-ignore
 				// eslint-disable-next-line camelcase
 				InTampermonkey: typeof GM_info !== "undefined",
@@ -11064,15 +11295,8 @@ async function ForBetterClub() {
 		const canvas = w.MainCanvas.getContext("2d");
 		const bak = canvas.textAlign;
 		canvas.textAlign = align;
-		canvas.beginPath();
-		canvas.rect(x, y, width, 65);
-		canvas.fillStyle = "#FFFF88";
-		canvas.fillRect(x, y, width, 65);
-		canvas.fill();
-		canvas.lineWidth = 2;
-		canvas.strokeStyle = "black";
-		canvas.stroke();
-		canvas.closePath();
+		DrawRect(x, y, width, 65, "#FFFF88");
+		DrawEmptyRect(x, y, width, 65, "black", 2);
 		DrawTextFit(
 			text,
 			align === "left" ? x + 3 : x + width / 2,
@@ -11094,13 +11318,20 @@ async function ForBetterClub() {
 	/** @type {(cb: () => void, intval: number) => void} */
 	function createTimer(cb, intval) {
 		let lastTime = Date.now();
-		SDK.hookFunction("GameRun", HOOK_PRIORITIES.Top, (args, next) => {
-			if (Date.now() - lastTime > intval) {
-				lastTime = Date.now();
-				cb();
+		SDK.hookFunction(
+			"GameRun",
+			HOOK_PRIORITIES.Top,
+			/**
+			 * @param {Parameters<typeof GameRun>} args
+			 */ (args, next) => {
+				const ts = Date.now();
+				if (ts - lastTime > intval) {
+					lastTime = ts;
+					cb();
+				}
+				return next(args);
 			}
-			return next(args);
-		});
+		);
 	}
 
 	/** @type {(addon: string) => boolean} */
@@ -11124,7 +11355,7 @@ async function ForBetterClub() {
 		return o && typeof o === "object" && !Array.isArray(o);
 	}
 
-	/** @type {(m: unknown) => m is ChatMessage} */
+	/** @type {(m: unknown) => m is ServerChatRoomMessage} */
 	function isChatMessage(m) {
 		return (
 			isNonNullObject(m) &&
@@ -11333,7 +11564,8 @@ async function ForBetterClub() {
 			}
 			if (fbcSettings.confirmLeave) {
 				e.preventDefault();
-				// The connection is closed, this call gets you relogin immediately
+				// @ts-ignore - TS thinks it's private, pffft we don't respect that
+				// eslint-disable-next-line @typescript-eslint/no-unsafe-call
 				ServerSocket.io.disconnect();
 				CommonSetScreen("Character", "Relog");
 				ServerSocket.io.connect();
