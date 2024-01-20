@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name Bondage Club Enhancements
 // @namespace https://www.bondageprojects.com/
-// @version 4.67
+// @version 4.79
 // @description FBC - For Better Club - enhancements for the bondage club - old name kept in tampermonkey for compatibility
 // @author Sidious
 // @match https://bondageprojects.elementfx.com/*
@@ -15,10 +15,6 @@
 // ==/UserScript==
 /* eslint-disable no-inline-comments */
 // @ts-check
-// eslint-disable-next-line
-/// <reference path="./node_modules/@total-typescript/ts-reset/dist/recommended.d.ts"/>
-// eslint-disable-next-line
-/// <reference path="./bce.d.ts" />
 
 /**
  *     BCE/FBC
@@ -38,27 +34,27 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const FBC_VERSION = "4.67-Lilian-20231224101200";
-const settingsVersion = 55;
+const FBC_VERSION = "4.79-Lilian-20240120082100";
+const settingsVersion = 56;
 
 const fbcChangelog = `${FBC_VERSION}
-- fixed timers not working
+- Fixed minor layout issues with the whisper button
 
-4.66
-- R99 compatibility
-- added option to show numeric arousal, when meter is expanded
+4.78
+- Added a setting to disable FBC's modifications to the whisper button
+- Fixed the whisper button to respect map whisper range
+- Repositioned the whisper button
+- Fixed /versions to respect character visibility in maps to match behaviour in normal rooms
 
-4.65
-- restore gag anti-cheat
+4.77
+- Added whisper icon to all messages with a sender
+- Updated whisper icon
+- Fixed /r <component>
+- R100 support
+- Removed accurate timer inputs
 
-4.64
-- moved settings and wardrobe data to extension settings
-- fixed instant messenger and dialog compatibility with MBCHC
-- fixed a game freeze after a failed login attempt
-- preliminary readiness for R99
-- technical changes
-  - use bc-stubs for type checking
-  - use club functions and variables for drawing tooltips (dDeepLb)
+4.76
+- Fixed chat augments on R100Beta1
 `;
 
 /*
@@ -75,7 +71,7 @@ var bcModSdk=function(){"use strict";const e="1.1.0";function o(e){alert("Mod ER
 async function ForBetterClub() {
 	"use strict";
 
-	const SUPPORTED_GAME_VERSIONS = ["R99"];
+	const SUPPORTED_GAME_VERSIONS = ["R100"];
 	const CAPABILITIES = /** @type {const} */ (["clubslave"]);
 
 	const w = window;
@@ -138,7 +134,6 @@ async function ForBetterClub() {
 			ArousalSync: "ArousalSync",
 			Hello: "Hello",
 		}),
-		TIMER_INPUT_ID = "bce_timerInput",
 		WHISPER_CLASS = "bce-whisper-input";
 
 	const EMBED_TYPE = /** @type {const} */ ({
@@ -166,9 +161,6 @@ async function ForBetterClub() {
 	/** @type {Map<string, "allowed" | "denied">} */
 	const sessionCustomOrigins = new Map();
 
-	/** @type {Map<number, FBCCharacterState>} */
-	const characterStates = new Map();
-
 	/** @type {FBCToySyncState} */
 	const toySyncState = {
 		deviceSettings: new Map(),
@@ -186,7 +178,7 @@ async function ForBetterClub() {
 	};
 
 	/**
-	 * @type {Record<keyof defaultSettings, string | boolean> & {version?: number}}
+	 * @type {Record<keyof defaultSettings, string | boolean> & {version: number}}
 	 */
 	// @ts-ignore -- this is fully initialized in loadSettings
 	let fbcSettings = {};
@@ -195,8 +187,11 @@ async function ForBetterClub() {
 	const defaultSettings = /** @type {const} */ ({
 		animationEngine: {
 			label: "Animation Engine",
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
-				if (newValue) {
+				if (newValue && Player.ArousalSettings) {
 					// Disable conflicting settings
 					Player.ArousalSettings.AffectExpression = false;
 				}
@@ -208,6 +203,9 @@ async function ForBetterClub() {
 		},
 		expressions: {
 			label: "Automatic Arousal Expressions (Replaces Vanilla)",
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				if (newValue) {
 					fbcSettings.animationEngine = true;
@@ -222,6 +220,9 @@ async function ForBetterClub() {
 		activityExpressions: {
 			label: "Activity Expressions",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				if (newValue) {
 					fbcSettings.animationEngine = true;
@@ -236,12 +237,15 @@ async function ForBetterClub() {
 			label:
 				"(*) Alternate Arousal (Lilian version, requires hybrid/locked arousal meter)",
 			value: true,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				sendHello();
 				Player.BCEArousal = !!newValue;
 				Player.BCEArousalProgress = Math.min(
 					BCE_MAX_AROUSAL,
-					Player.ArousalSettings.Progress
+					Player.ArousalSettings?.Progress ?? 0
 				);
 				debug("alternateArousal", newValue);
 			},
@@ -251,6 +255,9 @@ async function ForBetterClub() {
 		stutters: {
 			label: "(*) Alternative speech stutter (Lilian version)",
 			value: true,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("stutters", newValue);
 			},
@@ -261,6 +268,9 @@ async function ForBetterClub() {
 		numericArousalMeter: {
 			label: "Show numeric arousal meter",
 			value: true,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("numericArousalMeter", newValue);
 			},
@@ -270,6 +280,9 @@ async function ForBetterClub() {
 		layeringMenu: {
 			label: "Enable layering menus",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("layeringMenu", newValue);
 			},
@@ -280,13 +293,20 @@ async function ForBetterClub() {
 		extendedWardrobe: {
 			label: "Extended wardrobe slots (96)",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("extendedWardrobe", newValue);
 				if (newValue) {
-					WardrobeSize = EXPANDED_WARDROBE_SIZE;
-					loadExtendedWardrobe(Player.Wardrobe);
-					// Call compress wardrobe to save existing outfits, if another addon has extended the wardrobe
-					CharacterCompressWardrobe(Player.Wardrobe);
+					if (Player.Wardrobe) {
+						WardrobeSize = EXPANDED_WARDROBE_SIZE;
+						loadExtendedWardrobe(Player.Wardrobe);
+						// Call compress wardrobe to save existing outfits, if another addon has extended the wardrobe
+						CharacterCompressWardrobe(Player.Wardrobe);
+					} else {
+						logWarn("Player.Wardrobe not found, skipping wardrobe extension");
+					}
 				} else {
 					// Restore original size
 					WardrobeSize = DEFAULT_WARDROBE_SIZE;
@@ -301,6 +321,9 @@ async function ForBetterClub() {
 		privateWardrobe: {
 			label: "Replace wardrobe list with character previews",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("privateWardrobe", newValue);
 			},
@@ -311,6 +334,9 @@ async function ForBetterClub() {
 		automateCacheClear: {
 			label: "Clear Drawing Cache Hourly",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("automateCacheClear", newValue);
 			},
@@ -321,6 +347,9 @@ async function ForBetterClub() {
 		instantMessenger: {
 			label: "(*) Instant messenger",
 			value: true,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("instantMessenger", newValue);
 			},
@@ -331,6 +360,9 @@ async function ForBetterClub() {
 		augmentChat: {
 			label: "Chat Links and Embeds",
 			value: true,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("augmentChat", newValue);
 			},
@@ -341,6 +373,9 @@ async function ForBetterClub() {
 		ctrlEnterOoc: {
 			label: "Use Ctrl+Enter to OOC",
 			value: true,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("ctrlEnterOoc", newValue);
 			},
@@ -350,6 +385,9 @@ async function ForBetterClub() {
 		whisperInput: {
 			label: "Use italics for input when whispering",
 			value: true,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("whisperInput", newValue);
 			},
@@ -360,6 +398,9 @@ async function ForBetterClub() {
 		chatColors: {
 			label: "Improve colors for readability",
 			value: true,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				if (newValue) {
 					document.body.classList.add(BCE_COLOR_ADJUSTMENTS_CLASS_NAME);
@@ -375,6 +416,9 @@ async function ForBetterClub() {
 		friendPresenceNotifications: {
 			label: "Show friend presence notifications",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("friendPresenceNotifications", newValue);
 			},
@@ -385,6 +429,9 @@ async function ForBetterClub() {
 		friendOfflineNotifications: {
 			label: "Show friends going offline too",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("friendOfflineNotifications", newValue);
 			},
@@ -395,6 +442,9 @@ async function ForBetterClub() {
 		friendNotificationsInChat: {
 			label: "Show friend presence notifications in chat, when possible",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("friendNotificationsInChat", newValue);
 			},
@@ -405,6 +455,9 @@ async function ForBetterClub() {
 		pastProfiles: {
 			label: "Save & browse seen profiles (requires refresh)",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("pastProfiles", newValue);
 			},
@@ -415,6 +468,9 @@ async function ForBetterClub() {
 		pendingMessages: {
 			label: "Show sent messages while waiting for server",
 			value: true,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("showSentMessages", newValue);
 			},
@@ -422,9 +478,25 @@ async function ForBetterClub() {
 			description:
 				"Shows messages you've sent while waiting for the server to respond, confirming you have sent the message and the server is just being slow.",
 		},
+		whisperButton: {
+			label: "Show whisper button on chat messages",
+			value: true,
+			/**
+			 * @param {unknown} newValue
+			 */
+			sideEffects: (newValue) => {
+				debug("whisperButton", newValue);
+			},
+			category: "chat",
+			description:
+				"Adds a whisper button to chat messages, allowing you to whisper to the sender more conveniently.",
+		},
 		gagspeak: {
 			label: "(X) Understand All Gagged and when Deafened",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("gagspeak", newValue);
 				if (newValue) {
@@ -438,6 +510,9 @@ async function ForBetterClub() {
 		lockpick: {
 			label: "Reveal Lockpicking Order Based on Skill",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("lockpick", newValue);
 			},
@@ -448,6 +523,9 @@ async function ForBetterClub() {
 		allowLayeringWhileBound: {
 			label: "Allow layering menus while bound",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("allowLayeringWhileBound", newValue);
 				if (newValue && !fbcSettings.layeringMenu) {
@@ -462,6 +540,9 @@ async function ForBetterClub() {
 		autoStruggle: {
 			label: "(X) Make automatic progress while struggling",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("autoStruggle", newValue);
 				if (newValue) {
@@ -475,6 +556,9 @@ async function ForBetterClub() {
 		allowIMBypassBCX: {
 			label: "(X) Allow IMs to bypass BCX beep restrictions",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("allowIMBypassBCX", newValue);
 				if (newValue) {
@@ -488,6 +572,9 @@ async function ForBetterClub() {
 		shareAddons: {
 			label: "Share Addons",
 			value: true,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("shareAddons", newValue);
 			},
@@ -498,6 +585,9 @@ async function ForBetterClub() {
 		bcx: {
 			label: "Load BCX by Jomshir98",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				if (newValue) {
 					fbcSettings.bcxDevel = false;
@@ -522,6 +612,9 @@ async function ForBetterClub() {
 		bcxDevel: {
 			label: "Load BCX beta",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				if (newValue) {
 					fbcSettings.bcx = false;
@@ -566,6 +659,9 @@ async function ForBetterClub() {
 		ebch: {
 			label: "Load EBCH by Elicia",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				if (newValue) {
 					if (handledByFUSAM("EBCH")) {
@@ -587,6 +683,9 @@ async function ForBetterClub() {
 		mbs: {
 			label: "Load MBS by Rama",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				if (newValue) {
 					if (handledByFUSAM("MBS")) {
@@ -607,6 +706,9 @@ async function ForBetterClub() {
 		lscg: {
 			label: "Load LSCG by LittleSera",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				if (newValue) {
 					if (handledByFUSAM("LSCG")) {
@@ -627,6 +729,9 @@ async function ForBetterClub() {
 		toySync: {
 			label: "Enable buttplug.io (requires refresh)",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("toySync", newValue);
 			},
@@ -637,6 +742,9 @@ async function ForBetterClub() {
 		antiAntiGarble: {
 			label: "Limited gag anti-cheat: cloth-gag equivalent garbling",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				if (newValue) {
 					fbcSettings.antiAntiGarbleStrong = false;
@@ -651,6 +759,9 @@ async function ForBetterClub() {
 		antiAntiGarbleStrong: {
 			label: "Full gag anti-cheat: use equipped gags to determine garbling",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				if (newValue) {
 					fbcSettings.antiAntiGarble = false;
@@ -666,6 +777,9 @@ async function ForBetterClub() {
 			label:
 				"(*) Extra gag anti-cheat: (Lilian version)",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				if (newValue) {
 					fbcSettings.antiAntiGarble = false;
@@ -680,6 +794,9 @@ async function ForBetterClub() {
 		blindWithoutGlasses: {
 			label: "Require glasses to see",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				if (!newValue) {
 					removeCustomEffect("BlurLight");
@@ -693,6 +810,9 @@ async function ForBetterClub() {
 			label:
 				"Allow leashing without wearing a leashable item (requires leasher to have FBC too)",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("leashAlways", newValue);
 				if (newValue) {
@@ -708,6 +828,9 @@ async function ForBetterClub() {
 		hideHiddenItemsIcon: {
 			label: "Hide the hidden items icon",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("hideHiddenItemsIcon", newValue);
 			},
@@ -718,6 +841,9 @@ async function ForBetterClub() {
 		itemAntiCheat: {
 			label: "(X) Enable anti-cheat",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("itemAntiCheat", newValue);
 				if (newValue) {
@@ -731,6 +857,9 @@ async function ForBetterClub() {
 		antiCheatBlackList: {
 			label: "Blacklist detected cheaters automatically",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("antiCheatBlackList", newValue);
 			},
@@ -740,6 +869,9 @@ async function ForBetterClub() {
 		},
 		checkUpdates: {
 			label: "Check for updates",
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("checkUpdates", newValue);
 			},
@@ -749,6 +881,9 @@ async function ForBetterClub() {
 		},
 		relogin: {
 			label: "Automatic Relogin on Disconnect",
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("relogin", newValue);
 			},
@@ -760,6 +895,9 @@ async function ForBetterClub() {
 		showQuickAntiGarble: {
 			label: "(X) Show gag cheat and anti-cheat options in chat",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				if (newValue) {
 					ChatRoomChatInputRect = [1356, 950, 700, 82];
@@ -779,6 +917,9 @@ async function ForBetterClub() {
 		ghostNewUsers: {
 			label: "Automatically ghost+blocklist unnaturally new users",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("ghostNewUsers", newValue);
 			},
@@ -786,18 +927,12 @@ async function ForBetterClub() {
 			description:
 				"Automatically ghost+blocklist unnaturally new users. This is useful for preventing malicious bots, but is not recommended to be enabled normally.",
 		},
-		accurateTimerLocks: {
-			label: "Use accurate timer inputs",
-			value: false,
-			sideEffects: (newValue) => {
-				debug("accurateTimerLocks", newValue);
-			},
-			category: "misc",
-			description: "Allows you to set specific durations for timer locks.",
-		},
 		confirmLeave: {
 			label: "Confirm leaving the game",
 			value: true,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("confirmLeave", newValue);
 			},
@@ -808,6 +943,9 @@ async function ForBetterClub() {
 		discreetMode: {
 			label: "Discreet mode (disable drawing)",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("discreetMode", newValue);
 				if (newValue) {
@@ -824,6 +962,9 @@ async function ForBetterClub() {
 		customContentDomainCheck: {
 			label: "Prompt before loading content from a 3rd party domain",
 			value: true,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("customContentDomainCheck", newValue);
 			},
@@ -834,6 +975,9 @@ async function ForBetterClub() {
 		fpsCounter: {
 			label: "Show FPS counter",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("fpsCounter", newValue);
 			},
@@ -844,6 +988,9 @@ async function ForBetterClub() {
 		limitFPSInBackground: {
 			label: "Limit FPS in background",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("limitFPSInBackground", newValue);
 			},
@@ -854,6 +1001,9 @@ async function ForBetterClub() {
 		limitFPSTo15: {
 			label: "Limit FPS to ~15",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("limitFPSTo15", newValue);
 				if (newValue) {
@@ -867,6 +1017,9 @@ async function ForBetterClub() {
 		limitFPSTo30: {
 			label: "Limit FPS to ~30",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("limitFPSTo30", newValue);
 				if (newValue) {
@@ -880,6 +1033,9 @@ async function ForBetterClub() {
 		limitFPSTo60: {
 			label: "Limit FPS to ~60",
 			value: false,
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("limitFPSTo60", newValue);
 				if (newValue) {
@@ -890,18 +1046,12 @@ async function ForBetterClub() {
 			category: "performance",
 			description: "Limits the FPS to 60. This is useful for saving resources.",
 		},
-		nickname: {
-			label: "Nickname",
-			value: "",
-			sideEffects: (newValue) => {
-				debug("nickname", newValue);
-			},
-			category: "hidden",
-			description: "",
-		},
 		buttplugDevices: {
 			label: "Buttplug Devices",
 			value: "",
+			/**
+			 * @param {unknown} newValue
+			 */
 			sideEffects: (newValue) => {
 				debug("buttplugDevices", newValue);
 				// Don't handle empty string
@@ -912,7 +1062,7 @@ async function ForBetterClub() {
 					if (!isString(newValue)) {
 						throw new Error("expected string for buttplugDevices");
 					}
-					const devices = /** @type {FBCToySetting[]} */ (JSON.parse(newValue));
+					const devices = /** @type {FBCToySetting[]} */ (parseJSON(newValue));
 					if (!Array.isArray(devices)) {
 						throw new Error("expected array for devices");
 					}
@@ -937,6 +1087,7 @@ async function ForBetterClub() {
 			// @ts-ignore - too lazy to fix
 			return ServerSocket.on(event, cb);
 		}
+		// @ts-ignore - too lazy to fix
 		return null;
 	}
 
@@ -972,26 +1123,22 @@ async function ForBetterClub() {
 		debug("loading settings");
 		if (Object.keys(fbcSettings).length === 0) {
 			let settings = /** @type {typeof fbcSettings} */ (
-				JSON.parse(localStorage.getItem(key))
+				parseJSON(localStorage.getItem(key))
 			);
 			const onlineSettings = /** @type {typeof fbcSettings} */ (
-				JSON.parse(
+				parseJSON(
 					LZString.decompressFromBase64(
-						Player.ExtensionSettings.FBC || Player.OnlineSettings.BCE
+						Player.ExtensionSettings.FBC || (Player.OnlineSettings?.BCE ?? "")
 					) || null
 				)
 			);
-			if (Player.OnlineSettings.BCE) {
+			if (Player.OnlineSettings?.BCE) {
 				Player.ExtensionSettings.FBC = Player.OnlineSettings.BCE;
 				ServerPlayerExtensionSettingsSync("FBC");
 				logInfo("Migrated online settings to extension settings");
 				delete Player.OnlineSettings.BCE;
 			}
-			if (
-				onlineSettings?.version >= settings?.version ||
-				(typeof settings?.version === "undefined" &&
-					typeof onlineSettings?.version !== "undefined")
-			) {
+			if (!settings?.version || onlineSettings.version >= settings.version) {
 				settings = onlineSettings;
 			}
 			if (!settings) {
@@ -1000,9 +1147,7 @@ async function ForBetterClub() {
 				settings = {};
 			}
 
-			for (const setting of /** @type {(keyof defaultSettings)[]} */ (
-				Object.keys(defaultSettings)
-			)) {
+			for (const [setting] of objEntries(defaultSettings)) {
 				if (!(setting in settings)) {
 					if (setting === "activityExpressions" && "expressions" in settings) {
 						settings[setting] = settings.expressions;
@@ -1047,10 +1192,16 @@ async function ForBetterClub() {
 
 	function postSettings() {
 		debug("handling settings side effects");
-		for (const [k, v] of Object.entries(fbcSettings)) {
-			if (isDefaultSettingKey(k)) {
-				defaultSettings[k].sideEffects(v);
+		for (const [k, v] of objEntries(fbcSettings)) {
+			if (k === "version") {
+				continue;
 			}
+			if (!isDefaultSettingKey(k)) {
+				logWarn("Deleting unknown setting", k);
+				delete fbcSettings[k];
+				continue;
+			}
+			defaultSettings[k].sideEffects(v);
 		}
 		bceSaveSettings();
 
@@ -1070,9 +1221,11 @@ async function ForBetterClub() {
 		TIGHTEN:
 			"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwEAYAAAAHkiXEAAACfklEQVR4Xu2bsU4CQRCGT7ERjbFQMTH4AhpjYeEbGC1MbKww4Q2sodAGW2PjA9jb2RkKjMHeBhsrIxRQKQnGgGDi3MRIwNvBndtdd2gW7ib/zHz/7t5xgSCQlxD4JnBwC+8nV4VKLARSKUhzeQljrwdjPh9Len+T7O9D7/X6T/BowMsLHJ+b85cRS+fLyyCLgBH4sPHsjKUMf0WvrgbP+GEGvL9D/NKjv8y0dH54SAOPhjxsaUnvr8j0NPTebNIMKO/5y0xr59SZL+C14g+CiwvazNec3gG5cd4a19d59UV9CIFEAk50OrICfp8kTCtgZQXSohFRM7XRiIr4r+eZDPj4oAGbmqLFS7QigddXN7YgfCal2JY7YeWy3QakF39eq66v4XM2C+PMjDusB1Z6fk4zYOIknoaT4RYZ9Szq7Q3qWXiOpy7tWTIZmgEIZGxHeylfgolNWj3VKk8dsatWKrTG0QhthRK3Qsx/dKStArNC29ujGaDLiKitpv98qWSWF1v209O/GUEFSY1vt6G+tTU2BHYI39/baUQuZwcf9irSaUhRLNphxPExe8t2J8CZh1sAdeugxt/dAY+NDbu5xF4d7r2lWc0rI7ytLRRib8nNhPhoAGd29+lvhrRatnJgehinvd3w7km7rnFBVwwwDoqrAFcMmOQCYFpXDDDsgCsGGMbEl94VA2QL4psDSspigBImviAxgI+t38pyDTDsvxggBhgmYDi9rAAxQIlAUinKwSBXVoCDaNVKdsUA+R6g5idblBjAhlZNWAxQ4yRRVAJyDaAS0xw/oVmPSW7sJhSeD8du34h/COk/vstUkC+ytRp02g3Bjjrij4Pt4/YJN03BbYn5mYwAAAAASUVORK5CYII=",
 		USER: "data:image/png;base64,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",
+		WHISPER:
+			"data:image/png;base64,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",
 	});
 
-	const DEVS = [23476];
+	const DEVS = [23476, 27006, 24890];
 
 	/**
 	 * @param {string} original - The English message
@@ -1125,7 +1278,6 @@ async function ForBetterClub() {
 					"(X) 在聊天室里显示堵嘴作弊和反作弊选项",
 				"Automatically ghost+blocklist unnaturally new users":
 					"自动对不自然的用户无视并添加黑名单",
-				"Use accurate timer inputs": "使用准确的计时器输入",
 				"Confirm leaving the game": "离开游戏前需要确认",
 				"Discreet mode (disable drawing)": "谨慎模式 (禁用绘图)",
 				"Keep tab active (requires refresh)":
@@ -1171,7 +1323,7 @@ async function ForBetterClub() {
 			original in translations[TranslationLanguage]
 				? translations[TranslationLanguage][original]
 				: original;
-		for (const [key, val] of Object.entries(replacements)) {
+		for (const [key, val] of objEntries(replacements)) {
 			while (text.includes(key)) {
 				text = text.replace(key, val);
 			}
@@ -1183,7 +1335,7 @@ async function ForBetterClub() {
 		displayText(original, replacements);
 
 	/**
-	 * @type {(gameVersion: string) => Readonly<{ [key: string]: string }>}
+	 * @param {string} gameVersion
 	 */
 	const expectedHashes = (gameVersion) => {
 		switch (gameVersion) {
@@ -1206,38 +1358,41 @@ async function ForBetterClub() {
 					CharacterLoadCanvas: "EAB81BC4",
 					CharacterNickname: "A794EFF5",
 					CharacterRefresh: "F2459653",
-					CharacterReleaseTotal: "396640D1",
+					CharacterReleaseTotal: "BB9C6989",
 					CharacterSetCurrent: "F46573D8",
 					CharacterSetFacialExpression: "F8272D7A",
+					CharacterSetActivePose: "566A14D7",
 					ChatAdminRoomCustomizationClick: "E194A605",
 					ChatAdminRoomCustomizationProcess: "B33D6388",
+					ChatRoomAppendChat: "998F2F98",
 					ChatRoomCharacterItemUpdate: "263DB2F0",
 					ChatRoomCharacterUpdate: "C444E92D",
 					ChatRoomClearAllElements: "14DAAB05",
-					ChatRoomClick: "4C4A7B70",
+					ChatRoomClick: "BB1CE058",
 					ChatRoomCreateElement: "AA36E8B6",
 					ChatRoomCurrentTime: "A462DD3A",
 					ChatRoomDrawBackground: "AEE70C4E",
-					ChatRoomDrawCharacterOverlay: "06FB4CC3",
+					ChatRoomDrawCharacterOverlay: "4D8E24CB",
+					ChatRoomDrawCharacterStatusIcons: "198C8657",
 					ChatRoomHTMLEntities: "0A7ADB1D",
-					ChatRoomKeyDown: "2C43231C",
+					ChatRoomKeyDown: "48C7F35A",
 					ChatRoomListManipulation: "75D28A8B",
 					ChatRoomMessage: "BBD61334",
-					ChatRoomMessageDisplay: "A9ACC758",
+					ChatRoomMessageDisplay: "32B1CF42",
 					ChatRoomRegisterMessageHandler: "C432923A",
 					ChatRoomResize: "653445D7",
-					ChatRoomRun: "94D14C8C",
+					ChatRoomRun: "8D91EC46",
 					ChatRoomSendChat: "7F540ED0",
 					ChatRoomStart: "9B822A9A",
-					CommandExecute: "5C948CC3",
-					CommandParse: "C63F98C3",
+					CommandExecute: "803D6C70",
+					CommandParse: "8412C411",
 					CommonClick: "1F6DF7CB",
 					CommonColorIsValid: "390A2CE4",
-					CommonSetScreen: "E2AC00F4",
-					CraftingClick: "571D9763",
-					CraftingConvertSelectedToItem: "308B958C",
+					CommonSetScreen: "E0CA772F",
+					CraftingClick: "FF1A7B21",
+					CraftingConvertSelectedToItem: "48270B42",
 					CraftingRun: "5BE6E125",
-					DialogClick: "A1B56CDF",
+					DialogClick: "E6F5CC58",
 					DialogDraw: "D8377D69",
 					DialogDrawItemMenu: "FCE556C2",
 					DialogLeave: "C37553DC",
@@ -1253,8 +1408,8 @@ async function ForBetterClub() {
 					DrawProcess: "BC1E9396",
 					DrawText: "C1BF0F50",
 					DrawTextFit: "F9A1B11E",
-					ElementCreateInput: "60D2EA73",
-					ElementCreateTextArea: "81019A58",
+					ElementCreateInput: "EB2A3EC8",
+					ElementCreateTextArea: "AA4AEDE7",
 					ElementIsScrolledToEnd: "1CC4FE11",
 					ElementPosition: "CC4E3C82",
 					ElementRemove: "60809E60",
@@ -1265,18 +1420,6 @@ async function ForBetterClub() {
 					GLDrawResetCanvas: "81214642",
 					InformationSheetRun: "90140B32",
 					InventoryGet: "E666F671",
-					InventoryItemMiscMistressTimerPadlockClick: "861419FC",
-					InventoryItemMiscMistressTimerPadlockDraw: "4E1628BE",
-					InventoryItemMiscMistressTimerPadlockExit: "66BC6923",
-					InventoryItemMiscMistressTimerPadlockLoad: "BE46432F",
-					InventoryItemMiscOwnerTimerPadlockClick: "C929699B",
-					InventoryItemMiscOwnerTimerPadlockDraw: "BCA80BF8",
-					InventoryItemMiscOwnerTimerPadlockExit: "1BE66B4A",
-					InventoryItemMiscOwnerTimerPadlockLoad: "8A55C0D1",
-					InventoryItemMiscTimerPasswordPadlockClick: "BAE0BAC9",
-					InventoryItemMiscTimerPasswordPadlockDraw: "0BB8E88D",
-					InventoryItemMiscTimerPasswordPadlockExit: "7323E56D",
-					InventoryItemMiscTimerPasswordPadlockLoad: "82223608",
 					LoginClick: "EE94BEC7",
 					LoginRun: "C3926C4F",
 					LoginSetSubmitted: "C88F4A8E",
@@ -1288,7 +1431,7 @@ async function ForBetterClub() {
 					OnlineGameAllowChange: "3779F42C",
 					OnlineProfileClick: "521146DF",
 					OnlineProfileRun: "7F57EF9A",
-					PoseSetActive: "2FE9ABBA",
+					PoseSetActive: "22C02050",
 					RelogRun: "10AF5A60",
 					RelogExit: "2DFB2DAD",
 					ServerAccountBeep: "F16771D4",
@@ -1297,21 +1440,21 @@ async function ForBetterClub() {
 					ServerClickBeep: "3E6277BE",
 					ServerConnect: "845E50A6",
 					ServerDisconnect: "06C1A6B0",
-					ServerInit: "FEC6457F",
+					ServerInit: "11B7D69A",
 					ServerOpenFriendList: "FA8D3CDE",
 					ServerPlayerExtensionSettingsSync: "1776666B",
 					ServerSend: "ABE74E75",
 					ServerSendQueueProcess: "BD4277AC",
 					SkillGetWithRatio: "3EB4BC45",
 					SpeechGarble: "9D669F73",
-					SpeechGarbleByGagLevel: "5F6E16C8",
+					SpeechGarbleByGagLevel: "3D604B82",
 					SpeechGetTotalGagLevel: "5F4F6D45",
 					StruggleDexterityProcess: "7E19ADA9",
 					StruggleFlexibilityCheck: "727CE05B",
 					StruggleFlexibilityProcess: "278D7285",
 					StruggleLockPickDraw: "2F1F603B",
 					StruggleMinigameHandleExpression: "B6E4A1A0",
-					StruggleMinigameStop: "206F85E7",
+					StruggleMinigameStop: "FB05E8A9",
 					StruggleStrengthProcess: "D20CF698",
 					TextGet: "4DDE5794",
 					TextLoad: "ADF7C890",
@@ -1343,7 +1486,7 @@ async function ForBetterClub() {
 					try {
 						return JSON.stringify(v);
 					} catch (e) {
-						return v.toString();
+						return v?.toString();
 					}
 				})
 				.join(", "),
@@ -1382,12 +1525,12 @@ async function ForBetterClub() {
 		pushLog("error", ...args);
 	};
 
-	/** @type {string[]} */
+	/** @type {unknown[]} */
 	const deviatingHashes = [];
 	/** @type {string[]} */
 	const skippedFunctionality = [];
 
-	/** @type {(functionName: string, patches: Record<string,string>, affectedFunctionality: string) => void} */
+	/** @type {(functionName: keyof typeof window, patches: Record<string,string>, affectedFunctionality: string) => void} */
 	const patchFunction = (functionName, patches, affectedFunctionality) => {
 		// Guard against patching a function that has been modified by another addon not using the shared SDK on supported versions.
 		if (
@@ -1409,7 +1552,7 @@ async function ForBetterClub() {
 		const div = document.createElement("div");
 		div.setAttribute("class", "ChatMessage bce-notification");
 		div.setAttribute("data-time", ChatRoomCurrentTime());
-		div.setAttribute("data-sender", Player.MemberNumber.toString());
+		div.setAttribute("data-sender", Player.MemberNumber?.toString());
 		if (typeof node === "string") {
 			div.appendChild(document.createTextNode(node));
 		} else if (Array.isArray(node)) {
@@ -1487,60 +1630,11 @@ async function ForBetterClub() {
 		// Here to not break customizer script
 	};
 
-	/**
-	 * @type {(duration: number) => FBCDuration}
-	 */
-	const durationToComponents = (duration) => {
-		let seconds = Math.floor(duration / 1000);
-		let minutes = Math.floor(seconds / 60);
-		let hours = Math.floor(minutes / 60);
-		const days = Math.floor(hours / 24);
-
-		hours -= days * 24;
-		minutes = minutes - days * 24 * 60 - hours * 60;
-		seconds = seconds - days * 24 * 60 * 60 - hours * 60 * 60 - minutes * 60;
-		return {
-			days,
-			hours,
-			minutes,
-			seconds,
-		};
-	};
-
-	/**
-	 * @type {(dateFuture: Date) => FBCDuration}
-	 */
-	const timeUntilDate = (dateFuture) => {
-		// https://stackoverflow.com/a/13904621/1780502 - jackcogdill
-		const dateNow = new Date();
-		return durationToComponents(dateFuture.getTime() - dateNow.getTime());
-	};
-
-	/**
-	 * @type {(timestamp: string | number | Date, days: number, hours: number, minutes: number, seconds: number) => number}
-	 */
-	const addToTimestamp = (timestamp, days, hours, minutes, seconds) => {
-		if (!days) {
-			days = 0;
-		}
-		if (!hours) {
-			hours = 0;
-		}
-		if (!minutes) {
-			minutes = 0;
-		}
-		if (!seconds) {
-			seconds = 0;
-		}
-		const date = new Date(timestamp);
-		date.setDate(date.getDate() + days);
-		date.setHours(date.getHours() + hours);
-		date.setMinutes(date.getMinutes() + minutes);
-		date.setSeconds(date.getSeconds() + seconds);
-		return date.getTime();
-	};
-
+	/** @type {string[]} */
 	const incompleteFunctions = [];
+	/**
+	 * @param {boolean} [copy] - Whether to copy the report to the clipboard
+	 */
 	const fbcDebug = async (copy) => {
 		/** @type {Map<string, string>} */
 		const info = new Map();
@@ -1555,7 +1649,7 @@ async function ForBetterClub() {
 		info.set("FBC Version", FBC_VERSION);
 		info.set(
 			"FBC Enabled Settings",
-			`\n- ${Object.entries(fbcSettings)
+			`\n- ${objEntries(fbcSettings)
 				.filter(([k, v]) => v || k === "version")
 				.map(([k, v]) => `${k}: ${v.toString()}`)
 				.join("\n- ")}`
@@ -1620,10 +1714,9 @@ async function ForBetterClub() {
 			}
 			incompleteFunctions.splice(incompleteFunctions.indexOf(label), 1);
 		} catch (err) {
-			/** @type {Error} */
 			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-			const e = err;
-			logError(`Error in ${label}: ${e?.toString()}\n${e?.stack}`);
+			const e = /** @type {Error} */ (err);
+			logError(`Error in ${label}: ${e?.toString()}\n${e?.stack ?? ""}`);
 		}
 	};
 
@@ -1671,7 +1764,7 @@ async function ForBetterClub() {
 	(async function () {
 		await waitFor(() => !!w.FUSAM?.present);
 		debug("FUSAM present, registering debug methods");
-		w.FUSAM.registerDebugMethod("FBC", fbcDebug);
+		w.FUSAM?.registerDebugMethod("FBC", fbcDebug);
 	})();
 
 	await registerFunction(functionIntegrityCheck, "functionIntegrityCheck");
@@ -1700,7 +1793,6 @@ async function ForBetterClub() {
 	registerFunction(autoGhostBroadcast, "autoGhostBroadcast");
 	registerFunction(blindWithoutGlasses, "blindWithoutGlasses");
 	registerFunction(friendPresenceNotifications, "friendPresenceNotifications");
-	registerFunction(accurateTimerInputs, "accurateTimerInputs");
 	registerFunction(forcedClubSlave, "forcedClubSlave");
 	registerFunction(fpsCounter, "fpsCounter");
 	registerFunction(instantMessenger, "instantMessenger");
@@ -1735,7 +1827,7 @@ async function ForBetterClub() {
 				typeof ServerIsConnected === "boolean" &&
 				ServerIsConnected
 		);
-		for (const [func, hash] of Object.entries(expectedHashes(GameVersion))) {
+		for (const [func, hash] of objEntries(expectedHashes(GameVersion))) {
 			if (!w[func]) {
 				logWarn(`Expected function ${func} not found.`);
 				continue;
@@ -1744,7 +1836,6 @@ async function ForBetterClub() {
 				logWarn(`Expected function ${func} is not a function.`);
 				continue;
 			}
-			// eslint-disable-next-line
 			const actualHash = SDK.getOriginalHash(func);
 			if (actualHash !== hash) {
 				logWarn(
@@ -1766,7 +1857,13 @@ async function ForBetterClub() {
 		)
 			.then((r) => r.text())
 			.then((r) => {
-				const [, latest] = /@version (.*)$/mu.exec(r);
+				const result = /@version (.*)$/mu.exec(r);
+				if (!result) {
+					logWarn("FBC update checker error: no version found");
+					return;
+				}
+
+				const [, latest] = result;
 				debug("latest version:", latest);
 				if (latest !== FBC_VERSION) {
 					// Create beep
@@ -1828,6 +1925,36 @@ async function ForBetterClub() {
 				"key.indexOf(CommandsKey + cmd.Tag) == 0)": `key.substring(1) === cmd.Tag)`,
 			},
 			"Whitelist commands will not work."
+		);
+
+		SDK.hookFunction(
+			"InformationSheetRun",
+			HOOK_PRIORITIES.AddBehaviour,
+			/**
+			 * @param {Parameters<typeof InformationSheetRun>} args
+			 */
+			(args, next) => {
+				if (
+					!InformationSheetSelection ||
+					!InformationSheetSelection.MemberNumber
+				) {
+					return next(args);
+				}
+
+				const ret = next(args);
+
+				if (DEVS.includes(InformationSheetSelection.MemberNumber)) {
+					const ctx = w.MainCanvas.getContext("2d");
+					if (!ctx) {
+						throw new Error("could not get canvas 2d context");
+					}
+					ctx.textAlign = "left";
+					DrawText(displayText("FBC Developer"), 550, 75, "hotpink", "black");
+					ctx.textAlign = "center";
+				}
+
+				return ret;
+			}
 		);
 
 		/*
@@ -1999,225 +2126,9 @@ async function ForBetterClub() {
 		);
 	}
 
-	function accurateTimerInputs() {
-		const timerInputElement = `ElementPosition("${TIMER_INPUT_ID}", 1400, 930, 250, 70);document.getElementById('${TIMER_INPUT_ID}').disabled = false;`;
-
-		const loadLockTimerInput = () => {
-			let defaultValue = "0d0h5m0s";
-			if (DialogFocusSourceItem?.Property?.RemoveTimer) {
-				const parsedTime = timeUntilDate(
-					new Date(DialogFocusSourceItem.Property.RemoveTimer)
-				);
-				defaultValue = `${parsedTime.days}d${parsedTime.hours}h${parsedTime.minutes}m${parsedTime.seconds}s`;
-			}
-			ElementCreateInput(TIMER_INPUT_ID, "text", defaultValue, "11");
-			ElementPosition(TIMER_INPUT_ID, -100, -100, 0, 0);
-			// @ts-ignore
-			document.getElementById(TIMER_INPUT_ID).disabled = true;
-			/** @type {HTMLInputElement} */
-			// @ts-ignore
-			const timerInput = document.getElementById(TIMER_INPUT_ID);
-			timerInput.onchange = function onchange() {
-				/** @type {{ value: string }} */
-				// @ts-ignore - value does exist on this type
-				const { value } = this;
-
-				// Validate input
-				if (!/^[0-9]*d?[0-9]*h?[0-9]*m?[0-9]*s?$/u.test(value)) {
-					return;
-				}
-
-				/** @type {FBCDuration} */
-				const additions = {
-					days: 0,
-					hours: 0,
-					minutes: 0,
-					seconds: 0,
-				};
-				value.replace(
-					/([0-9]+)[dhms]/gu,
-					/** @type {(match: string, number: string) => string} */
-					(match, number) => {
-						switch (match.slice(-1)) {
-							case "d":
-								additions.days = parseInt(number);
-								if (additions.days > 7) {
-									additions.days = 7;
-								}
-								break;
-							case "h":
-								additions.hours = parseInt(number);
-								if (additions.hours > 23) {
-									additions.hours = 23;
-								}
-								break;
-							case "m":
-								additions.minutes = parseInt(number);
-								if (additions.minutes > 59) {
-									additions.minutes = 59;
-								}
-								break;
-							case "s":
-								additions.seconds = parseInt(number);
-								if (additions.seconds > 59) {
-									additions.seconds = 59;
-								}
-								break;
-							default:
-								break;
-						}
-						return "";
-					}
-				);
-				DialogFocusSourceItem.Property.RemoveTimer = addToTimestamp(
-					Date.now(),
-					additions.days,
-					additions.hours,
-					additions.minutes,
-					additions.seconds
-				);
-				if (
-					DialogFocusSourceItem.Property.RemoveTimer - Date.now() >
-					(DialogFocusItem?.Asset?.MaxTimer || 604800) * 1000
-				) {
-					DialogFocusSourceItem.Property.RemoveTimer =
-						Date.now() + (DialogFocusItem?.Asset?.MaxTimer || 604800) * 1000;
-				}
-				if (CurrentScreen === "ChatRoom") {
-					ChatRoomCharacterItemUpdate(
-						CharacterGetCurrent(),
-						DialogFocusSourceItem.Asset.Group.Name
-					);
-					const until = timeUntilDate(
-						new Date(DialogFocusSourceItem.Property.RemoveTimer)
-					);
-					let timeMessage = "";
-					if (DialogFocusSourceItem.Property.ShowTimer) {
-						timeMessage =
-							" to $days days, $hours hours, $minutes minutes, and $seconds seconds";
-					}
-					fbcSendAction(
-						displayText(
-							`$PlayerName changed the timer on the $ItemName on $TargetName's $GroupName ${timeMessage}`,
-							{
-								$PlayerName: CharacterNickname(Player),
-								$ItemName: DialogFocusItem?.Asset?.Description?.toLowerCase(),
-								$TargetName: CharacterNickname(CharacterGetCurrent()),
-								$GroupName:
-									CharacterGetCurrent()?.FocusGroup?.Description?.toLowerCase(),
-								$days: until.days.toString(),
-								$hours: until.hours.toString(),
-								$minutes: until.minutes.toString(),
-								$seconds: until.seconds.toString(),
-							}
-						)
-					);
-				}
-			};
-		};
-
-		// Owner/Lover locks
-		patchFunction(
-			"InventoryItemMiscOwnerTimerPadlockDraw",
-			{
-				"// Draw buttons to add/remove time if available": `if (fbcSettingValue("accurateTimerLocks") && Player.CanInteract() && validator(C)) {${timerInputElement}} else`,
-			},
-			"Accurate timer inputs are not available for owner/lover locks."
-		);
-		patchFunction(
-			"InventoryItemMiscOwnerTimerPadlockClick",
-			{
-				"InventoryItemMiscOwnerTimerPadlockAdd(OwnerTimerChooseList[OwnerTimerChooseIndex] * 3600);":
-					'if (!fbcSettingValue("accurateTimerLocks")) InventoryItemMiscOwnerTimerPadlockAdd(OwnerTimerChooseList[OwnerTimerChooseIndex] * 3600);',
-			},
-			"Accurate timer inputs are not available for owner/lover locks."
-		);
-
-		const timerLoadMethods = /** @type {const} */ ([
-			"InventoryItemMiscMistressTimerPadlockLoad",
-			"InventoryItemMiscOwnerTimerPadlockLoad",
-			"InventoryItemMiscTimerPasswordPadlockLoad",
-		]);
-		const timerExitMethods = /** @type {const} */ ([
-			"InventoryItemMiscMistressTimerPadlockExit",
-			"InventoryItemMiscOwnerTimerPadlockExit",
-			"InventoryItemMiscTimerPasswordPadlockExit",
-		]);
-
-		for (const fn of timerLoadMethods) {
-			SDK.hookFunction(
-				fn,
-				HOOK_PRIORITIES.AddBehaviour,
-				/**
-				 * @param {Parameters<typeof InventoryItemMiscMistressTimerPadlockLoad>} args
-				 */
-				// eslint-disable-next-line no-loop-func
-				(args, next) => {
-					const ret = next(args);
-					if (fbcSettings.accurateTimerLocks) {
-						loadLockTimerInput();
-					}
-					return ret;
-				}
-			);
-		}
-
-		for (const fn of timerExitMethods) {
-			SDK.hookFunction(
-				fn,
-				HOOK_PRIORITIES.AddBehaviour,
-				/**
-				 * @param {Parameters<typeof InventoryItemMiscMistressTimerPadlockExit>} args
-				 */
-				// eslint-disable-next-line no-loop-func
-				(args, next) => {
-					const ret = next(args);
-					if (fbcSettings.accurateTimerLocks) {
-						ElementRemove(TIMER_INPUT_ID);
-					}
-					return ret;
-				}
-			);
-		}
-
-		// Password timer
-		patchFunction(
-			"InventoryItemMiscTimerPasswordPadlockDraw",
-			{
-				"// Draw buttons to add/remove time if available": `if (fbcSettingValue("accurateTimerLocks") && Player.CanInteract() && Player.MemberNumber == Property.LockMemberNumber) {${timerInputElement}} else`,
-			},
-			"Accurate timer inputs are not available for password locks."
-		);
-		patchFunction(
-			"InventoryItemMiscTimerPasswordPadlockClick",
-			{
-				"InventoryItemMiscTimerPasswordPadlockAdd(PasswordTimerChooseList[PasswordTimerChooseIndex] * 60, false);":
-					'if (!fbcSettingValue("accurateTimerLocks")) InventoryItemMiscTimerPasswordPadlockAdd(PasswordTimerChooseList[PasswordTimerChooseIndex] * 60, false);',
-			},
-			"Accurate timer inputs are not available for password locks."
-		);
-
-		// Mistress locks
-		patchFunction(
-			"InventoryItemMiscMistressTimerPadlockDraw",
-			{
-				"// Draw buttons to add/remove time if available": `if (fbcSettingValue("accurateTimerLocks") && Player.CanInteract() && (LogQuery("ClubMistress", "Management") || (Player.MemberNumber == DialogFocusSourceItem.Property.LockMemberNumber))) {${timerInputElement}} else`,
-			},
-			"Accurate timer inputs are not available for mistress locks."
-		);
-		patchFunction(
-			"InventoryItemMiscMistressTimerPadlockClick",
-			{
-				"InventoryItemMiscMistressTimerPadlockAdd(MistressTimerChooseList[MistressTimerChooseIndex] * 60, false);":
-					'if (!fbcSettingValue("accurateTimerLocks")) InventoryItemMiscMistressTimerPadlockAdd(MistressTimerChooseList[MistressTimerChooseIndex] * 60, false);',
-			},
-			"Accurate timer inputs are not available for mistress locks."
-		);
-	}
-
 	async function hookBCXAPI() {
 		await waitFor(() => !!w.bcx);
-		BCX = w.bcx?.getModApi("FBC");
+		BCX = w.bcx?.getModApi("FBC") ?? null;
 	}
 
 	// Load BCX
@@ -2252,6 +2163,56 @@ async function ForBetterClub() {
 		await waitFor(() => !!Commands);
 		debug("registering additional commands");
 
+		SDK.hookFunction(
+			"ChatRoomAppendChat",
+			HOOK_PRIORITIES.AddBehaviour,
+			/**
+			 * @param {Parameters<typeof ChatRoomAppendChat>} args
+			 */
+			(args, next) => {
+				if (!fbcSettings.whisperButton) {
+					return next(args);
+				}
+
+				const [div] = args;
+				const replyButton = div.querySelector(".ReplyButton");
+				replyButton?.remove();
+
+				const sender = div.getAttribute("data-sender");
+				const matchingCharacters = sender ? findDrawnCharacters(sender) : [];
+				if (
+					sender &&
+					sender !== Player.MemberNumber?.toString() &&
+					matchingCharacters.length > 0 &&
+					(!ChatRoomMapVisible ||
+						matchingCharacters.some(ChatRoomMapCharacterOnWhisperRange))
+				) {
+					const repl = document.createElement("a");
+					repl.href = "#";
+					repl.onclick = (e) => {
+						e.preventDefault();
+						ElementValue(
+							"InputChat",
+							`/w ${sender} ${ElementValue("InputChat").replace(
+								/^\/(beep|w(hisper)?) \S+ ?/u,
+								""
+							)}`
+						);
+						window.InputChat?.focus();
+					};
+					repl.title = "Whisper";
+					repl.classList.add("bce-line-icon-wrapper");
+					const img = document.createElement("img");
+					img.src = ICONS.WHISPER;
+					img.alt = "Whisper";
+					img.classList.add("bce-line-icon");
+					repl.appendChild(img);
+					div.prepend(repl);
+				}
+				return next(args);
+			}
+		);
+
 		/** @type {Command[]} */
 		const cmds = [
 			{
@@ -2275,14 +2236,14 @@ async function ForBetterClub() {
 				),
 				Action: async (_, _command, args) => {
 					const [target] = args;
-					/** @type {Character} */
+					/** @type {Character | null} */
 					let targetCharacter = null;
 					if (!target) {
 						targetCharacter = Player;
 					} else {
-						targetCharacter = Character.find(
-							(c) => c.MemberNumber === parseInt(target)
-						);
+						targetCharacter =
+							Character.find((c) => c.MemberNumber === parseInt(target)) ??
+							null;
 					}
 					if (!targetCharacter) {
 						logInfo("Could not find member", target);
@@ -2325,11 +2286,7 @@ async function ForBetterClub() {
 					);
 					const binds = targetCharacter.Appearance.filter(
 						(a) =>
-							a.Asset.Group.Category === "Item" &&
-							!["ItemNeck", "ItemNeckAccessories"].includes(
-								a.Asset.Group.Name
-							) &&
-							!a.Asset.Group.BodyCosplay
+							a.Asset.Group.Category === "Item" && !a.Asset.Group.BodyCosplay
 					);
 
 					const appearance = [...clothes];
@@ -2419,8 +2376,8 @@ async function ForBetterClub() {
 							try {
 								const bundle = /** @type {ItemBundle[]} */ (
 									bundleString.startsWith("[")
-										? JSON.parse(bundleString)
-										: JSON.parse(LZString.decompressFromBase64(bundleString))
+										? parseJSON(bundleString)
+										: parseJSON(LZString.decompressFromBase64(bundleString))
 								);
 
 								if (
@@ -2482,8 +2439,9 @@ async function ForBetterClub() {
 						fbcChatNotify(displayText(`beep target or message not provided`));
 						return;
 					}
+
 					const targetMemberNumber = parseInt(target);
-					if (!Player.FriendList.includes(targetMemberNumber)) {
+					if (!Player.FriendList?.includes(targetMemberNumber)) {
 						fbcChatNotify(
 							displayText(`$Target is not in your friend list`, {
 								$Target: target,
@@ -2491,6 +2449,10 @@ async function ForBetterClub() {
 						);
 						return;
 					}
+
+					const targetName =
+						Player.FriendNames?.get(targetMemberNumber) ??
+						`unknown (${targetMemberNumber})`;
 					ServerSend("AccountBeep", {
 						BeepType: "",
 						MemberNumber: targetMemberNumber,
@@ -2499,13 +2461,13 @@ async function ForBetterClub() {
 					});
 					FriendListBeepLog.push({
 						MemberNumber: targetMemberNumber,
-						MemberName: Player.FriendNames.get(targetMemberNumber),
-						ChatRoomName: null,
+						MemberName: targetName,
 						Sent: true,
 						Private: false,
 						Time: new Date(),
 						Message: msg,
 					});
+
 					const beepId = FriendListBeepLog.length - 1;
 					const link = document.createElement("a");
 					link.href = `#beep-${beepId}`;
@@ -2518,7 +2480,7 @@ async function ForBetterClub() {
 					link.textContent = displayText(
 						"(Beep to $Name ($Number): $Message)",
 						{
-							$Name: Player.FriendNames.get(targetMemberNumber),
+							$Name: targetName,
 							$Number: targetMemberNumber.toString(),
 							$Message: msg.length > 150 ? `${msg.substring(0, 150)}...` : msg,
 						}
@@ -2533,10 +2495,15 @@ async function ForBetterClub() {
 					"[target name] [message]: whisper the target player. Use first name only. Finds the first person in the room with a matching name, left-to-right, top-to-bottom."
 				),
 				Action: (_, command, args) => {
+					if (args.length < 2) {
+						fbcChatNotify(
+							displayText(`Whisper target or message not provided`)
+						);
+					}
+
 					const [target] = args;
 					const [, , ...message] = command.split(" ");
 					const msg = message?.join(" ");
-					/** @type {Character[]} */
 					const targetMembers = findDrawnCharacters(target);
 					if (!target || !targetMembers || targetMembers.length === 0) {
 						fbcChatNotify(`Whisper target not found: ${target}`);
@@ -2546,7 +2513,9 @@ async function ForBetterClub() {
 								"Multiple whisper targets found: $Targets. You can still whisper the player by clicking their name or by using their member number.",
 								{
 									$Targets: targetMembers
-										.map((c) => `${CharacterNickname(c)} (${c.MemberNumber})`)
+										.map(
+											(c) => `${CharacterNickname(c)} (${c.MemberNumber ?? ""})`
+										)
 										.join(", "),
 								}
 							)
@@ -2556,7 +2525,7 @@ async function ForBetterClub() {
 					} else {
 						const targetMemberNumber = targetMembers[0].MemberNumber;
 						const originalTarget = ChatRoomTargetMemberNumber;
-						ChatRoomTargetMemberNumber = targetMemberNumber;
+						ChatRoomTargetMemberNumber = targetMemberNumber ?? null;
 						ElementValue(
 							"InputChat",
 							`${
@@ -2580,11 +2549,13 @@ async function ForBetterClub() {
 				Action: (_, _command, args) => {
 					/** @type {(character: Character) => string} */
 					const getCharacterModInfo = (character) =>
-						`${CharacterNickname(character)} (${character.MemberNumber}) club ${
-							character.OnlineSharedSettings?.GameVersion
-						}${
+						`${CharacterNickname(character)} (${
+							character.MemberNumber ?? ""
+						}) club ${character.OnlineSharedSettings?.GameVersion ?? "R0"}${
 							w.bcx?.getCharacterVersion(character.MemberNumber)
-								? ` BCX ${bcx.getCharacterVersion(character.MemberNumber)}`
+								? ` BCX ${
+										w.bcx.getCharacterVersion(character.MemberNumber) ?? "?"
+								  }`
 								: ""
 						}${
 							character.FBC
@@ -2608,11 +2579,10 @@ async function ForBetterClub() {
 								: ""
 						}`;
 
-					const targets =
-						args.length > 0 ? findDrawnCharacters(args[0], true) : [];
-
-					const printList =
-						targets.length > 0 ? targets : ChatRoomCharacterDrawlist;
+					const printList = findDrawnCharacters(
+						args.length > 0 ? args[0] : null,
+						true
+					);
 
 					const versionOutput = printList
 						.map(getCharacterModInfo)
@@ -2644,6 +2614,9 @@ async function ForBetterClub() {
 			settingsYIncrement = 70,
 			settingsYStart = 225;
 
+		/**
+		 * @param {SettingsCategory} category
+		 */
 		const settingsPageCount = (category) =>
 			Math.ceil(
 				Object.values(defaultSettings).filter((v) => v.category === category)
@@ -2699,8 +2672,11 @@ async function ForBetterClub() {
 
 		const scanButtonPosition = /** @type {const} */ ([1650, 225, 150, 50]);
 
+		/**
+		 * @param {SettingsCategory} category
+		 */
 		const currentDefaultSettings = (category) =>
-			Object.entries(defaultSettings).filter(
+			objEntries(defaultSettings).filter(
 				([, v]) => v.category === category && v.value === !!v.value
 			);
 
@@ -2713,7 +2689,12 @@ async function ForBetterClub() {
 			PreferenceMessage = "";
 		};
 		w.PreferenceSubscreenBCESettingsRun = function () {
-			w.MainCanvas.getContext("2d").textAlign = "left";
+			const ctx = w.MainCanvas.getContext("2d");
+			if (!ctx) {
+				logError("Could not get canvas context");
+				return;
+			}
+			ctx.textAlign = "left";
 			DrawText(
 				displayText("For Better Club Settings (FBC)"),
 				300,
@@ -2787,16 +2768,18 @@ async function ForBetterClub() {
 								"Gray"
 							);
 						} else {
-							w.MainCanvas.getContext("2d").textAlign = "center";
+							ctx.textAlign = "center";
 							DrawButton(
 								...scanButtonPosition,
 								displayText("Scan"),
 								toySyncState.client.isScanning ? "Grey" : "White",
 								"",
-								toySyncState.client.isScanning ? "Already scanning" : null,
+								// Bc types do not accept null
+								// eslint-disable-next-line no-undefined
+								toySyncState.client.isScanning ? "Already scanning" : undefined,
 								toySyncState.client.isScanning
 							);
-							w.MainCanvas.getContext("2d").textAlign = "left";
+							ctx.textAlign = "left";
 							DrawText(displayText("Device Name"), 300, 420, "Black", "Gray");
 							DrawText(
 								displayText("Synchronized Slot"),
@@ -2834,7 +2817,7 @@ async function ForBetterClub() {
 								}
 								DrawText(d.Name, 300, y, "Black", "Gray");
 
-								w.MainCanvas.getContext("2d").textAlign = "center";
+								ctx.textAlign = "center";
 								DrawBackNextButton(
 									800,
 									y - 32,
@@ -2846,7 +2829,7 @@ async function ForBetterClub() {
 									() => displayText(vibratingSlots[previousIdx]),
 									() => displayText(vibratingSlots[nextIdx])
 								);
-								w.MainCanvas.getContext("2d").textAlign = "left";
+								ctx.textAlign = "left";
 								y += settingsYIncrement;
 								if (y > 950) {
 									break;
@@ -2896,7 +2879,7 @@ async function ForBetterClub() {
 					y += settingsYIncrement;
 				}
 			}
-			w.MainCanvas.getContext("2d").textAlign = "center";
+			ctx.textAlign = "center";
 		};
 		// eslint-disable-next-line complexity
 		w.PreferenceSubscreenBCESettingsClick = function () {
@@ -2950,6 +2933,15 @@ async function ForBetterClub() {
 							continue;
 						}
 						const deviceSettings = toySyncState.deviceSettings.get(d.Name);
+						if (!deviceSettings) {
+							logWarn(
+								"Could not find device settings for",
+								d.Name,
+								toySyncState.deviceSettings
+							);
+							y += settingsYIncrement;
+							continue;
+						}
 						const currentIdx = vibratingSlots.indexOf(deviceSettings.SlotName);
 						let nextIdx = 0,
 							previousIdx = 0;
@@ -3061,7 +3053,7 @@ async function ForBetterClub() {
 			 * @param {Parameters<typeof StruggleLockPickDraw>} args
 			 */
 			(args, next) => {
-				if (fbcSettings.lockpick && w.StruggleLockPickOrder) {
+				if (fbcSettings.lockpick && StruggleLockPickOrder) {
 					const seed = parseInt(StruggleLockPickOrder.join(""));
 					const rand = newRand(seed);
 					const threshold = SkillGetWithRatio(Player, "LockPicking") / 20;
@@ -3101,7 +3093,7 @@ async function ForBetterClub() {
 			}
 
 			let passwords = /** @type {Passwords} */ (
-				JSON.parse(localStorage.getItem(localStoragePasswordsKey))
+				parseJSON(localStorage.getItem(localStoragePasswordsKey))
 			);
 			if (!passwords) {
 				passwords = {};
@@ -3112,7 +3104,7 @@ async function ForBetterClub() {
 
 		w.bceClearPassword = (accountname) => {
 			const passwords = /** @type {Passwords} */ (
-				JSON.parse(localStorage.getItem(localStoragePasswordsKey))
+				parseJSON(localStorage.getItem(localStoragePasswordsKey))
 			);
 			if (
 				!passwords ||
@@ -3131,7 +3123,7 @@ async function ForBetterClub() {
 
 			const loadPasswords = () =>
 				/** @type {Passwords} */ (
-					JSON.parse(localStorage.getItem(localStoragePasswordsKey))
+					parseJSON(localStorage.getItem(localStoragePasswordsKey))
 				);
 
 			/** @type {{ passwords: Passwords, posMaps: Record<string, string> }} */
@@ -3234,7 +3226,7 @@ async function ForBetterClub() {
 			}
 			breakCircuit = true;
 			let passwords = /** @type {Passwords} */ (
-				JSON.parse(localStorage.getItem(localStoragePasswordsKey))
+				parseJSON(localStorage.getItem(localStoragePasswordsKey))
 			);
 			debug("Attempting to log in again as", Player.AccountName);
 			if (!passwords) {
@@ -3437,6 +3429,20 @@ async function ForBetterClub() {
 			width: 0.1px;
 			height: 0.1px;
 			opacity: 0.01;
+		}
+		.bce-line-icon-wrapper {
+			display: none;
+			position: absolute;
+			right: 1em;
+		}
+		.ChatMessage:hover .bce-line-icon-wrapper,
+		.ChatMessage:focus .bce-line-icon-wrapper,
+		.ChatMessage:focus-within .bce-line-icon-wrapper {
+			display: inline;
+		}
+		.bce-line-icon {
+			height: 1em;
+			vertical-align: middle;
 		}
 		#bce-instant-messenger {
 			display: flex;
@@ -3651,7 +3657,7 @@ async function ForBetterClub() {
 							fbcChatNotify("Tried to OOC send a command. Use double // to confirm sending to chat.");
 							return;
 						}
-						
+
 						ElementValue("InputChat", prefix + "(" + text.replace(/\\)/g, "${CLOSINGBRACKETINDICATOR}"));
 					}
 					ChatRoomSendChat()`,
@@ -3731,9 +3737,9 @@ async function ForBetterClub() {
 
 			const maxIntensity = Math.max(
 				0,
-				...Player.Appearance.filter((a) => a.Property?.Intensity > -1).map(
-					(a) => a.Property.Intensity + 1
-				)
+				...Player.Appearance.filter(
+					(a) => (a.Property?.Intensity ?? -1) > -1
+				).map((a) => a.Property?.Intensity + 1)
 			);
 
 			const sumIntensity = Player.Appearance.filter(
@@ -3742,18 +3748,13 @@ async function ForBetterClub() {
 				(sumIntensity, x) => sumIntensity + x, 0
 			);
 
+			const playerArousal = Player.ArousalSettings?.Progress ?? 0;
 			const eggedBonus = maxIntensity * 5 + sumIntensity;
 			const chanceToStutter =
-				(Math.max(0, Player.ArousalSettings.Progress - 10 + eggedBonus * 0.5) * 0.5) /
-				100;
+				(Math.max(0, playerArousal - 10 + eggedBonus) * 0.5) / 100;
 
 			const chanceToMakeSound =
-				(Math.max(
-					0,
-					Player.ArousalSettings.Progress / 2 - 20 + eggedBonus
-				) *
-					0.5) /
-				100;
+				(Math.max(0, playerArousal / 2 - 20 + eggedBonus * 2) * 0.5) / 100;
 
 			if (!isChinese) {	
 				const r = Math.random();
@@ -3924,7 +3925,12 @@ async function ForBetterClub() {
 	}
 
 	async function automaticExpressions() {
-		await waitFor(() => CurrentScreen === "ChatRoom");
+		await waitFor(
+			() => CurrentScreen === "ChatRoom" && !!Player.ArousalSettings
+		);
+		if (!Player.ArousalSettings) {
+			throw new Error("Player.ArousalSettings is not defined");
+		}
 
 		patchFunction(
 			"StruggleMinigameHandleExpression",
@@ -3942,7 +3948,8 @@ async function ForBetterClub() {
 			 */
 			(args, next) => {
 				if (bceAnimationEngineEnabled()) {
-					StruggleExpressionStore = null;
+					// eslint-disable-next-line no-undefined
+					StruggleExpressionStore = undefined;
 					resetExpressionQueue(
 						[GAME_TIMED_EVENT_TYPE],
 						[MANUAL_OVERRIDE_EVENT_TYPE]
@@ -4015,7 +4022,7 @@ async function ForBetterClub() {
 			return lastUniqueId;
 		}
 
-		/** @type {Partial<Record<'Eyes' | 'Eyes2' | 'Eyebrows' | 'Mouth' | 'Fluids' | 'Emoticon' | 'Blush' | 'Pussy', string>>} */
+		/** @type {Partial<Record<'Eyes' | 'Eyes2' | 'Eyebrows' | 'Mouth' | 'Fluids' | 'Emoticon' | 'Blush' | 'Pussy', string | null>>} */
 		const manualComponents = {};
 
 		/** @type {(evt: ExpressionEvent) => void} */
@@ -4066,21 +4073,6 @@ async function ForBetterClub() {
 					if (typeof p.Priority !== "number") {
 						p.Priority = 1;
 					}
-					p.Pose = p.Pose.map(
-						// eslint-disable-next-line no-loop-func
-						(
-							/** @type {AssetPoseName | PoseEx} */
-							v
-						) => {
-							/** @type {AssetPoseName} */
-							// @ts-ignore
-							const poseName = v;
-							return {
-								Pose: poseName,
-								Category: PoseFemale3DCG.find((a) => a.Name === v)?.Category,
-							};
-						}
-					);
 				}
 			}
 			bceExpressionsQueue.push(event);
@@ -5181,7 +5173,7 @@ async function ForBetterClub() {
 			];
 		}
 
-		/** @type {(dict: ChatMessageDictionary) => boolean} */
+		/** @type {(dict?: ChatMessageDictionary) => boolean} */
 		function dictHasPlayerTarget(dict) {
 			return (
 				dict?.some(
@@ -5215,6 +5207,7 @@ async function ForBetterClub() {
 								!matcher.Criteria.DictionaryMatchers.some((m) =>
 									data.Dictionary?.find((t) =>
 										// eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+										// @ts-ignore - intentional dynamic indexing on statically defined types
 										Object.keys(m).every((k) => m[k] === t[k])
 									)
 								)
@@ -5244,17 +5237,18 @@ async function ForBetterClub() {
 			return [properties?.Expression || null, !properties?.RemoveTimer];
 		}
 
-		/** @type {(faceComponent: string, newExpression: ExpressionName, color: string | string[]) => void} */
+		/** @type {(faceComponent: string, newExpression: ExpressionName, color?: string | string[]) => void} */
 		function setExpression(t, n, color) {
 			if (!n) {
 				n = null;
 			}
 			for (let i = 0; i < Player.Appearance.length; i++) {
-				if (Player.Appearance[i].Asset.Group.Name === t) {
-					if (!Player.Appearance[i].Property) {
-						Player.Appearance[i].Property = {};
+				const appearance = Player.Appearance[i];
+				if (appearance.Asset.Group.Name === t) {
+					if (!appearance.Property) {
+						appearance.Property = {};
 					}
-					Player.Appearance[i].Property.Expression = n;
+					appearance.Property.Expression = n;
 					if (color) {
 						Player.Appearance[i].Color = color;
 					}
@@ -5263,15 +5257,9 @@ async function ForBetterClub() {
 			}
 		}
 
-		/** @type {{[key: string]: { Conflicts: string[] }}} */
-		const poseCategories = {
+		const poseCategories = /** @type {const} */ ({
 			BodyFull: {
-				Conflicts: [
-					"BodyUpper",
-					"BodyLower",
-					// eslint-disable-next-line no-undefined
-					undefined,
-				],
+				Conflicts: ["BodyUpper", "BodyLower"],
 			},
 			BodyUpper: {
 				Conflicts: ["BodyFull"],
@@ -5279,7 +5267,15 @@ async function ForBetterClub() {
 			BodyLower: {
 				Conflicts: ["BodyFull"],
 			},
-		};
+		});
+
+		/**
+		 * @param {unknown} pose
+		 * @returns {pose is keyof typeof poseCategories}
+		 */
+		function hasConflicts(pose) {
+			return isString(pose) && pose in poseCategories;
+		}
 
 		const faceComponents = [
 			"Eyes",
@@ -5346,13 +5342,13 @@ async function ForBetterClub() {
 				pushEvent({
 					Type: MANUAL_OVERRIDE_EVENT_TYPE,
 					Duration: -1,
-					Expression: Object.entries(manualComponents).reduce(
+					Expression: objEntries(manualComponents).reduce(
 						(a, [k, v]) => ({ ...a, [k]: [{ Expression: v }] }),
 						{}
 					),
 				});
 			} else {
-				for (const k of Object.keys(manualComponents)) {
+				for (const [k] of objEntries(manualComponents)) {
 					delete manualComponents[k];
 				}
 			}
@@ -5371,12 +5367,14 @@ async function ForBetterClub() {
 					const component = `${args[0].toUpperCase()}${args
 						.substring(1)
 						.toLowerCase()}`;
-					for (const e of bceExpressionsQueue.filter((a) => a.Expression)) {
-						if (component === "Eyes" && "Eyes2" in e.Expression) {
-							delete e.Expression.Eyes2;
+					for (const e of bceExpressionsQueue
+						.map((a) => a.Expression)
+						.filter(Boolean)) {
+						if (component === "Eyes" && "Eyes2" in e) {
+							delete e.Eyes2;
 						}
-						if (component in e.Expression) {
-							delete e.Expression[component];
+						if (component in e) {
+							delete e[component];
 						}
 					}
 					fbcChatNotify(
@@ -5417,14 +5415,21 @@ async function ForBetterClub() {
 		});
 
 		/**
-		 * @param {string[]} poses
+		 * @param {AssetPoseName} pose
+		 */
+		function getPoseCategory(pose) {
+			return PoseFemale3DCG.find((a) => a.Name === pose)?.Category;
+		}
+
+		/**
+		 * @param {readonly string[]} poses
 		 */
 		function setPoses(poses) {
 			poses = poses.filter((p) => p).map((p) => p.toLowerCase());
 			bceExpressionsQueue.forEach((e) => {
 				if (e.Type === MANUAL_OVERRIDE_EVENT_TYPE) {
 					e.Poses = [];
-				} else if (e.Poses?.length > 0) {
+				} else if (e.Poses && e.Poses.length > 0) {
 					e.Poses.forEach((p) => {
 						if (p.Pose.length === 0) {
 							return;
@@ -5432,10 +5437,8 @@ async function ForBetterClub() {
 						if (typeof p.Pose[0] === "string") {
 							return;
 						}
-						/** @type {PoseEx[]} */
-						// @ts-ignore
 						const poseList = p.Pose;
-						p.Pose = poseList.filter((pp) => pp.Category);
+						p.Pose = poseList.filter((pp) => !!getPoseCategory(pp));
 					});
 				}
 			});
@@ -5531,13 +5534,16 @@ async function ForBetterClub() {
 				const duration =
 						typeof Timer === "number" && Timer > 0 ? Timer * 1000 : -1,
 					/** @type {Record<string, ExpressionStage[]>} */
-					e = {},
-					types = [AssetGroup];
+					e = {};
+				/** @type {(keyof typeof manualComponents)[]} */
+				let types = [];
 
 				if (AssetGroup === "Eyes") {
-					types.push("Eyes2");
+					types = ["Eyes", "Eyes2"];
 				} else if (AssetGroup === "Eyes1") {
-					types[0] = "Eyes";
+					types = ["Eyes"];
+				} else {
+					types = [AssetGroup];
 				}
 
 				if (
@@ -5566,50 +5572,65 @@ async function ForBetterClub() {
 			}
 		);
 
-		SDK.hookFunction(
+		const poseFuncs = /** @type {const} */ ([
+			"CharacterSetActivePose",
 			"PoseSetActive",
-			HOOK_PRIORITIES.OverrideBehaviour,
-			/**
-			 * @param {Parameters<typeof PoseSetActive>} args
-			 */
-			(args, next) => {
-				const [C, Pose] = args;
-				if (
-					!isCharacter(C) ||
-					(!isStringOrStringArray(Pose) && Pose !== null) ||
-					!C.IsPlayer() ||
-					!bceAnimationEngineEnabled()
-				) {
-					return next(args);
-				}
+		]);
+		for (const poseFunc of poseFuncs) {
+			SDK.hookFunction(
+				poseFunc,
+				HOOK_PRIORITIES.OverrideBehaviour,
+				/**
+				 * @param {Parameters<typeof PoseSetActive>} args
+				 */
+				// eslint-disable-next-line no-loop-func
+				(args, next) => {
+					const [C, Pose] = args;
+					if (
+						!isCharacter(C) ||
+						(!isStringOrStringArray(Pose) && Pose !== null) ||
+						!C.IsPlayer() ||
+						!bceAnimationEngineEnabled()
+					) {
+						return next(args);
+					}
 
-				const p = {};
-				if (!Pose || (Array.isArray(Pose) && Pose.every((pp) => !pp))) {
-					p.Pose = /** @type {AssetPoseName[]} */ (["BaseUpper", "BaseLower"]);
-				} else {
-					p.Pose = [Pose];
+					const p = {};
+					if (!Pose || (Array.isArray(Pose) && Pose.every((pp) => !pp))) {
+						p.Pose = /** @type {AssetPoseName[]} */ ([
+							"BaseUpper",
+							"BaseLower",
+						]);
+					} else {
+						p.Pose = [Pose];
+					}
+					p.Duration = -1;
+					const evt = {
+						Type: MANUAL_OVERRIDE_EVENT_TYPE,
+						Duration: -1,
+						Poses: [p],
+					};
+					pushEvent(evt);
+					return CustomArousalExpression();
 				}
-				p.Duration = -1;
-				const evt = {
-					Type: MANUAL_OVERRIDE_EVENT_TYPE,
-					Duration: -1,
-					Poses: [p],
-				};
-				pushEvent(evt);
-				return CustomArousalExpression();
-			}
-		);
+			);
+		}
 
 		registerSocketListener("ChatRoomSyncPose", (data) => {
 			if (data === null || !isNonNullObject(data)) {
+				return;
+			}
+			if (!Array.isArray(data.Pose)) {
+				logWarn(
+					`data.Pose in ChatRoomSyncPose for ${data.MemberNumber?.toString()} is not an array`
+				);
 				return;
 			}
 			if (!bceAnimationEngineEnabled()) {
 				return;
 			}
 			if (data.MemberNumber === Player.MemberNumber) {
-				const poses = Array.isArray(data.Pose) ? data.Pose : [data.Pose];
-				setPoses(poses);
+				setPoses(data.Pose);
 			}
 		});
 
@@ -5621,10 +5642,7 @@ async function ForBetterClub() {
 				return;
 			}
 			if (data.Character?.MemberNumber === Player.MemberNumber) {
-				const poses = Array.isArray(data.Character.ActivePose)
-					? data.Character.ActivePose
-					: [data.Character.ActivePose];
-				setPoses(poses);
+				setPoses(data.Character.ActivePose ?? []);
 			}
 		});
 
@@ -5642,14 +5660,21 @@ async function ForBetterClub() {
 				(a) =>
 					faceComponents.includes(a.Asset.Group.Name) && a.Property?.RemoveTimer
 			).forEach((a) => {
+				// @ts-ignore - a.Property cannot be undefined due to filter above
 				delete a.Property.RemoveTimer;
 			});
 
+			if (!Player.ArousalSettings) {
+				logWarn("Player.ArousalSettings is not defined");
+				return;
+			}
+
 			Player.ArousalSettings.AffectExpression = false;
 
-			if (orgasmCount < Player.ArousalSettings.OrgasmCount) {
-				orgasmCount = Player.ArousalSettings.OrgasmCount;
-			} else if (orgasmCount > Player.ArousalSettings.OrgasmCount) {
+			const oCount = Player.ArousalSettings.OrgasmCount ?? 0;
+			if (orgasmCount < oCount) {
+				orgasmCount = oCount;
+			} else if (orgasmCount > oCount) {
 				Player.ArousalSettings.OrgasmCount = orgasmCount;
 				ActivityChatRoomArousalSync(Player);
 			}
@@ -5691,7 +5716,7 @@ async function ForBetterClub() {
 				// Only boost up to the expression at arousal 90
 				const lastOrgasmMaxArousal = 90,
 					lastOrgasmMaxBoost = 30,
-					orgasms = Player.ArousalSettings.OrgasmCount || 0;
+					orgasms = Player.ArousalSettings?.OrgasmCount || 0;
 				const lastOrgasmBoostDuration = Math.min(300, 60 + orgasms * 5),
 					secondsSinceOrgasm = ((Date.now() - lastOrgasm) / 10000) | 0;
 				if (secondsSinceOrgasm > lastOrgasmBoostDuration) {
@@ -5721,7 +5746,7 @@ async function ForBetterClub() {
 			/** @type {{ [key: string]: ExpressionStage }} */
 			const desiredExpression = {};
 
-			/** @type {{ [key: string]: { Id: number; Pose: AssetPoseName; Category?: string; Duration: number; Priority: number; Type: string }}} */
+			/** @type {Record<string, { Id: number; Pose: AssetPoseName; Category?: string; Duration: number; Priority: number; Type: string }>} */
 			let desiredPose = {};
 
 			/** @type {{ [key: string]: ExpressionStage }} */
@@ -5730,7 +5755,10 @@ async function ForBetterClub() {
 			/** @type {(expression: ExpressionName, stage: ExpressionStage, next: ExpressionEvent, faceComponent: string) => void} */
 			const trySetNextExpression = (e, exp, next, t) => {
 				const priority = exp.Priority || next.Priority || 0;
-				if (!nextExpression[t] || nextExpression[t].Priority <= priority) {
+				if (
+					!nextExpression[t] ||
+					(nextExpression[t].Priority ?? 0) <= priority
+				) {
 					nextExpression[t] = {
 						Id: exp.Id,
 						Expression: e,
@@ -5744,14 +5772,17 @@ async function ForBetterClub() {
 			// Calculate next expression
 			for (let j = 0; j < bceExpressionsQueue.length; j++) {
 				const next = bceExpressionsQueue[j];
+				const nextUntil = next.Until ?? 0;
+				const nextAt = next.At ?? 0;
 				let active = false;
-				if (next.Until > Date.now() || next.Until - next.At < 0) {
-					if (Object.keys(next.Expression || {}).length > 0) {
-						for (const t of Object.keys(next.Expression)) {
-							let durationNow = Date.now() - next.At;
-							for (let i = 0; i < next.Expression[t].length; i++) {
+				if (nextUntil > Date.now() || nextUntil - nextAt < 0) {
+					const nextExpr = next.Expression ?? {};
+					if (Object.keys(nextExpr).length > 0) {
+						for (const t of Object.keys(nextExpr)) {
+							let durationNow = Date.now() - nextAt;
+							for (let i = 0; i < nextExpr[t].length; i++) {
 								/** @type {ExpressionStage} */
-								const exp = next.Expression[t][i];
+								const exp = nextExpr[t][i];
 								durationNow -= exp.Duration;
 								if (durationNow < 0 || exp.Duration < 0) {
 									active = true;
@@ -5777,13 +5808,19 @@ async function ForBetterClub() {
 													next,
 													t
 												);
+												// @ts-ignore - not undefined, ts is a derp
 												bceExpressionsQueue[j].Expression[t][i].Applied = true;
 											} else {
 												// Prevent being overridden by other expressions while also not applying a change
 												trySetNextExpression(current, exp, next, t);
 											}
 										} else {
-											trySetNextExpression(exp.Expression, exp, next, t);
+											trySetNextExpression(
+												exp.Expression ?? null,
+												exp,
+												next,
+												t
+											);
 										}
 									}
 									break;
@@ -5792,24 +5829,32 @@ async function ForBetterClub() {
 						}
 					}
 					if (next.Poses?.length) {
-						let durationNow = Date.now() - next.At;
+						let durationNow = Date.now() - nextAt;
 						for (const pose of next.Poses) {
 							durationNow -= pose.Duration;
 							if (durationNow < 0 || pose.Duration < 0) {
 								active = true;
-								for (const pp of pose.Pose) {
-									/** @type {PoseEx} */
-									// @ts-ignore
-									const p = pp;
+								for (const p of pose.Pose) {
 									const priority = pose.Priority || next.Priority || 0;
+									const category = getPoseCategory(p);
+									if (!category) {
+										logWarn(`Pose ${p} has no category`);
+										continue;
+									}
+
+									if (!pose.Id) {
+										logWarn(`Pose ${p} has no ID`);
+										pose.Id = newUniqueId();
+									}
+
 									if (
-										!desiredPose[p.Category] ||
-										desiredPose[p.Category].Priority <= priority
+										!desiredPose[category] ||
+										desiredPose[category].Priority <= priority
 									) {
-										desiredPose[p.Category] = {
+										desiredPose[category] = {
 											Id: pose.Id,
-											Pose: p.Pose,
-											Category: p.Category,
+											Pose: p,
+											Category: category,
 											Duration: pose.Duration,
 											Priority: priority,
 											Type: next.Type,
@@ -5847,47 +5892,53 @@ async function ForBetterClub() {
 
 			// Garbage collect unused expressions - this should occur before manual expressions are detected
 			for (let j = 0; j < bceExpressionsQueue.length; j++) {
-				for (const t of Object.keys(bceExpressionsQueue[j].Expression || {})) {
-					if (!nextExpression[t] || nextExpression[t].Duration > 0) {
-						continue;
-					}
-					const nextId = nextExpression[t].Id,
-						nextPriority = nextExpression[t].Priority;
+				const qExpr = bceExpressionsQueue[j].Expression;
+				const qPoses = bceExpressionsQueue[j].Poses;
+				if (qExpr) {
+					for (const t of Object.keys(qExpr)) {
+						if (!nextExpression[t] || nextExpression[t].Duration > 0) {
+							continue;
+						}
+						const nextId = mustNum(nextExpression[t].Id),
+							nextPriority = mustNum(nextExpression[t].Priority, 0);
 
-					for (
-						let i = 0;
-						i < bceExpressionsQueue[j].Expression[t].length;
-						i++
-					) {
-						const exp = bceExpressionsQueue[j].Expression[t][i];
-						if (
-							exp.Duration < 0 &&
-							(exp.Id < nextId || exp.Priority < nextPriority)
-						) {
-							bceExpressionsQueue[j].Expression[t].splice(i, 1);
-							i--;
+						for (let i = 0; i < qExpr[t].length; i++) {
+							const exp = qExpr[t][i];
+							if (
+								exp.Duration < 0 &&
+								(mustNum(exp.Id) < nextId ||
+									mustNum(exp.Priority, 0) < nextPriority)
+							) {
+								qExpr[t].splice(i, 1);
+								i--;
+							}
+						}
+						if (qExpr[t].length === 0) {
+							delete qExpr[t];
 						}
 					}
-					if (bceExpressionsQueue[j].Expression[t].length === 0) {
-						delete bceExpressionsQueue[j].Expression[t];
-					}
 				}
-				for (let k = 0; k < bceExpressionsQueue[j].Poses?.length; k++) {
-					const pose = bceExpressionsQueue[j].Poses[k];
-					/** @type {PoseEx[]} */
-					// @ts-ignore
-					const poseList = pose.Pose;
-					const desiredIsNewerAndInfinite = poseList.every(
-						// eslint-disable-next-line no-loop-func
-						(p) =>
-							desiredPose[p.Category]?.Duration < 0 &&
-							desiredPose[p.Category]?.Id > pose.Id &&
-							(desiredPose[p.Category]?.Type === MANUAL_OVERRIDE_EVENT_TYPE ||
-								bceExpressionsQueue[j].Type !== MANUAL_OVERRIDE_EVENT_TYPE)
-					);
-					if (pose.Duration < 0 && desiredIsNewerAndInfinite) {
-						bceExpressionsQueue[j].Poses.splice(k, 1);
-						k--;
+				if (qPoses) {
+					for (let k = 0; k < qPoses.length; k++) {
+						const pose = qPoses[k];
+						const poseList = pose.Pose;
+						const desiredIsNewerAndInfinite = poseList.every(
+							// eslint-disable-next-line no-loop-func
+							(p) => {
+								const category = getPoseCategory(p);
+								return (
+									!!category &&
+									desiredPose[category]?.Duration < 0 &&
+									desiredPose[category]?.Id > mustNum(pose.Id) &&
+									(desiredPose[category]?.Type === MANUAL_OVERRIDE_EVENT_TYPE ||
+										bceExpressionsQueue[j].Type !== MANUAL_OVERRIDE_EVENT_TYPE)
+								);
+							}
+						);
+						if (pose.Duration < 0 && desiredIsNewerAndInfinite) {
+							qPoses.splice(k, 1);
+							k--;
+						}
 					}
 				}
 				if (
@@ -5922,21 +5973,24 @@ async function ForBetterClub() {
 			// Handle arousal-based expressions
 			outer: for (const t of Object.keys(w.bce_ArousalExpressionStages)) {
 				const [exp] = expression(t);
-				// eslint-disable-next-line init-declarations
-				let chosenExpression;
+				/** @type {ExpressionName} */
+				let chosenExpression = null;
+				let expressionChosen = false;
 				for (const face of w.bce_ArousalExpressionStages[t]) {
 					const limit =
 						face.Limit - (direction === ArousalMeterDirection.Up ? 0 : 1);
 					if (arousal + lastOrgasmAdjustment() >= limit) {
 						if (face.Expression !== exp) {
 							chosenExpression = face.Expression;
+							expressionChosen = true;
 							break;
 						} else {
 							continue outer;
 						}
 					}
 				}
-				if (typeof chosenExpression !== "undefined") {
+				if (expressionChosen) {
+					/** @type {ExpressionStages} */
 					const e = {};
 					e[t] = [{ Expression: chosenExpression, Duration: -1, Priority: 0 }];
 					pushEvent({
@@ -5966,18 +6020,19 @@ async function ForBetterClub() {
 			if (Object.keys(desiredExpression).length > 0) {
 				for (const t of Object.keys(desiredExpression)) {
 					if (
-						BCX?.getRuleState("block_changing_emoticon").isEnforced &&
+						BCX?.getRuleState("block_changing_emoticon")?.isEnforced &&
 						t === "Emoticon"
 					) {
 						continue;
 					}
 					setExpression(
 						t,
-						desiredExpression[t].Expression,
+						desiredExpression[t].Expression ?? null,
 						desiredExpression[t].Color
 					);
 					ServerSend("ChatRoomCharacterExpressionUpdate", {
-						Name: desiredExpression[t].Expression,
+						// @ts-ignore - null is a valid name, mistake in BC-stubs
+						Name: desiredExpression[t].Expression ?? null,
 						Group: t,
 						Appearance: ServerAppearanceBundle(Player.Appearance),
 					});
@@ -5989,24 +6044,33 @@ async function ForBetterClub() {
 			// Figure out desiredPose conflicts
 			function resolvePoseConflicts() {
 				const maxPriority = Math.max(
-						...Object.values(desiredPose).map((p) => p.Priority)
-					),
-					maxPriorityPoses = Object.entries(desiredPose).filter(
-						(p) => p[1].Priority === maxPriority
-					);
-				let [maxPriorityPose] = maxPriorityPoses;
+					...Object.values(desiredPose).map((p) => p.Priority)
+				);
+
+				const maxPriorityPoses = objEntries(desiredPose).filter(
+					(p) => p[1].Priority === maxPriority
+				);
+
+				let maxPriorityPose = "";
+
 				if (maxPriorityPoses.length > 1) {
 					const maxId = Math.max(...maxPriorityPoses.map((p) => p[1].Id)),
 						maxIdPoses = maxPriorityPoses.filter((p) => p[1].Id === maxId);
-					[maxPriorityPose] = maxIdPoses;
+					[[maxPriorityPose]] = maxIdPoses;
 				} else if (maxPriorityPoses.length === 0) {
 					return 0;
+				} else {
+					[[maxPriorityPose]] = maxPriorityPoses;
 				}
 				let deleted = 0;
-				const conflicts = poseCategories[maxPriorityPose[0]]?.Conflicts || [];
-				for (const conflict of conflicts.filter((c) => c in desiredPose)) {
-					delete desiredPose[conflict];
-					deleted++;
+				if (hasConflicts(maxPriorityPose)) {
+					const conflicts = poseCategories[maxPriorityPose].Conflicts || [];
+					for (const conflict of Array.from(conflicts).filter(
+						(c) => c in desiredPose
+					)) {
+						delete desiredPose[conflict];
+						deleted++;
+					}
 				}
 				return deleted;
 			}
@@ -6095,14 +6159,16 @@ async function ForBetterClub() {
 
 		const layerPriority = "bce_LayerPriority";
 
-		/** @type {(C: Character, item: Item) => boolean} */
+		/** @type {(C: Character, item?: Item | null) => boolean} */
 		function assetVisible(C, item) {
-			return item && !!C.AppearanceLayers.find((a) => a.Asset === item.Asset);
+			return (
+				!!item && !!C.AppearanceLayers?.find((a) => a.Asset === item.Asset)
+			);
 		}
 
-		/** @type {(C: Character, item: Item) => boolean} */
+		/** @type {(C: Character, item?: Item | null) => boolean} */
 		function assetWorn(C, item) {
-			return item && !!C.Appearance.find((a) => a === item);
+			return !!item && !!C.Appearance.find((a) => a === item);
 		}
 
 		/** @type {Record<string, number>} */
@@ -6113,13 +6179,14 @@ async function ForBetterClub() {
 		function updateItemPriorityFromLayerPriorityInput(item) {
 			if (item) {
 				if (advancedPriorities) {
-					const priorities = Object.entries(layerPriorities);
+					const priorities = objEntries(layerPriorities);
 					if (!item.Property) {
 						item.Property = { OverridePriority: {} };
 					} else {
 						item.Property.OverridePriority = {};
 					}
 					for (const [layer, priority] of priorities) {
+						// @ts-ignore - typescript isn't smart enough to understand that OverridePriority is an object, where any string key is valid
 						item.Property.OverridePriority[layer] = priority;
 					}
 				} else {
@@ -6138,7 +6205,7 @@ async function ForBetterClub() {
 		let layerPage = 0;
 
 		const preview = CharacterLoadSimple(
-			`LayeringPreview-${Player.MemberNumber}`
+			`LayeringPreview-${Player.MemberNumber ?? ""}`
 		);
 
 		/**
@@ -6159,48 +6226,64 @@ async function ForBetterClub() {
 
 		/** @type {(C: Character, FocusItem: Item) => void} */
 		function prioritySubscreenEnter(C, FocusItem) {
+			function getFocusItem() {
+				if (!DialogFocusItem) {
+					throw new Error(
+						"expected DialogFocusItem when entering layering menu"
+					);
+				}
+
+				const item = InventoryGet(preview, DialogFocusItem.Asset.Group.Name);
+				if (!item) {
+					throw new Error("expected focus item when entering layering menu");
+				}
+				return item;
+			}
+
 			DialogFocusItem = FocusItem;
 			prioritySubscreen = true;
 			advancedPriorities = false;
-			const initialValue = C.AppearanceLayers.find(
-				(a) => a.Asset === FocusItem.Asset
-			).Priority;
+			if (!C.AppearanceLayers) {
+				logWarn("C.AppearanceLayers is not defined");
+			}
+			const initialValue =
+				C.AppearanceLayers?.find((a) => a.Asset === FocusItem.Asset)
+					?.Priority ?? 0;
 			layerPriorities = {};
 			for (const layer of FocusItem.Asset.Layer) {
-				if (!layer.Name) {
+				const layerName = layer.Name;
+				if (!layerName) {
 					continue;
 				}
-				const drawnLayer = C.AppearanceLayers.find(
-					(a) => a.Asset === FocusItem.Asset && a.Name === layer.Name
+				const drawnLayer = C.AppearanceLayers?.find(
+					(a) => a.Asset === FocusItem.Asset && a.Name === layerName
 				);
 				let priority = layer.Priority ?? -1;
 				if (
 					isNonNullObject(FocusItem?.Property?.OverridePriority) &&
-					layer.Name in FocusItem.Property.OverridePriority
+					layerName in FocusItem.Property.OverridePriority
 				) {
-					priority = FocusItem?.Property?.OverridePriority[layer.Name];
+					priority = FocusItem?.Property?.OverridePriority[layerName];
 				}
 				if (drawnLayer) {
 					priority = drawnLayer.Priority ?? priority;
 				}
-				layerPriorities[layer.Name] = priority;
+				layerPriorities[layerName] = priority;
 				const el = ElementCreateInput(
-					layerElement(layer.Name),
+					layerElement(layerName),
 					"number",
 					"",
 					"20"
 				);
-				ElementValue(layerElement(layer.Name), priority.toString());
-				el.setAttribute("data-layer", layer.Name);
+				ElementValue(layerElement(layerName), priority.toString());
+				el.setAttribute("data-layer", layerName);
 				el.className = layerPriority;
 				// eslint-disable-next-line no-loop-func -- layerPriorities scope is outside the function, ElementValue and InventoryGet are global functions
 				el.addEventListener("change", () => {
-					layerPriorities[layer.Name] = parseInt(
-						ElementValue(layerElement(layer.Name))
+					layerPriorities[layerName] = parseInt(
+						ElementValue(layerElement(layerName))
 					);
-					updateItemPriorityFromLayerPriorityInput(
-						InventoryGet(preview, FocusItem.Asset.Group.Name)
-					);
+					updateItemPriorityFromLayerPriorityInput(getFocusItem());
 				});
 			}
 			hideAllLayerElements();
@@ -6212,10 +6295,14 @@ async function ForBetterClub() {
 			layerPage = 0;
 			preview.Appearance = C.Appearance.slice();
 			CharacterRefresh(preview, false, false);
-			document.getElementById(layerPriority).addEventListener("change", () => {
-				updateItemPriorityFromLayerPriorityInput(
-					InventoryGet(preview, FocusItem.Asset.Group.Name)
-				);
+
+			const priorityInput = document.getElementById(layerPriority);
+			if (!priorityInput) {
+				logWarn("Priority input is not defined");
+				return;
+			}
+			priorityInput.addEventListener("change", () => {
+				updateItemPriorityFromLayerPriorityInput(getFocusItem());
 			});
 		}
 		function prioritySubscreenExit() {
@@ -6227,7 +6314,11 @@ async function ForBetterClub() {
 			DialogFocusItem = null;
 		}
 
-		for (const func of ["DialogLeave", "DialogLeaveItemMenu"]) {
+		const dialogLeaveFuncs = /** @type {const} */ ([
+			"DialogLeave",
+			"DialogLeaveItemMenu",
+		]);
+		for (const func of dialogLeaveFuncs) {
 			SDK.hookFunction(
 				func,
 				HOOK_PRIORITIES.OverrideBehaviour,
@@ -6287,6 +6378,11 @@ async function ForBetterClub() {
 				const ret = next(args);
 				if (fbcSettings.layeringMenu) {
 					const C = CharacterAppearanceSelection;
+					if (!C) {
+						throw new Error(
+							"CharacterAppearanceSelection is not defined in appearance menu"
+						);
+					}
 					const item = C.Appearance.find((a) => a.Asset.Group === C.FocusGroup);
 					if (CharacterAppearanceMode === "Cloth" && assetVisible(C, item)) {
 						DrawButton(
@@ -6314,10 +6410,18 @@ async function ForBetterClub() {
 			(args, next) => {
 				if (fbcSettings.layeringMenu) {
 					const C = CharacterAppearanceSelection;
+					if (!C) {
+						throw new Error(
+							"CharacterAppearanceSelection is not defined in appearance menu"
+						);
+					}
 					const item = C.Appearance.find(
 						(a) => a.Asset.Group?.Name === C.FocusGroup?.Name
 					);
 					if (prioritySubscreen) {
+						if (!item) {
+							throw new Error("focus item is not defined in layering menu");
+						}
 						prioritySubscreenClick(C, item);
 						return null;
 					} else if (
@@ -6325,6 +6429,9 @@ async function ForBetterClub() {
 						CharacterAppearanceMode === "Cloth" &&
 						assetVisible(C, item)
 					) {
+						if (!item) {
+							throw new Error("focus item is not defined in layering menu");
+						}
 						prioritySubscreenEnter(C, item);
 					}
 				}
@@ -6346,8 +6453,16 @@ async function ForBetterClub() {
 					isCharacter(C) &&
 					canAccessLayeringMenus()
 				) {
-					const focusItem = InventoryGet(C, C.FocusGroup?.Name);
+					if (!C.FocusGroup) {
+						throw new Error("layering button not guarded behind C.FocusGroup");
+					}
+					const focusItem = InventoryGet(C, C.FocusGroup.Name);
 					if (assetWorn(C, focusItem)) {
+						if (!focusItem) {
+							throw new Error(
+								"layering button not guarded behind focus being on a worn item"
+							);
+						}
 						if (
 							colorCopiableAssets.includes(focusItem.Asset.Name) &&
 							Player.CanInteract()
@@ -6476,8 +6591,13 @@ async function ForBetterClub() {
 			 * @param {Parameters<typeof DialogDraw>} args
 			 */
 			(args, next) => {
-				const C = CharacterGetCurrent(),
-					focusItem = InventoryGet(C, C.FocusGroup?.Name);
+				const C = CharacterGetCurrent();
+				if (!C) {
+					throw new Error("CharacterGetCurrent is not defined in DialogDraw");
+				}
+				const focusItem = C.FocusGroup
+					? InventoryGet(C, C.FocusGroup.Name)
+					: null;
 				if (prioritySubscreen) {
 					if (canAccessLayeringMenus()) {
 						if (focusItem) {
@@ -6503,8 +6623,13 @@ async function ForBetterClub() {
 				if (!canAccessLayeringMenus()) {
 					return next(args);
 				}
-				const C = CharacterGetCurrent(),
-					focusItem = InventoryGet(C, C.FocusGroup?.Name);
+				const C = CharacterGetCurrent();
+				if (!C) {
+					throw new Error("CharacterGetCurrent is not defined in DialogClick");
+				}
+				const focusItem = C.FocusGroup
+					? InventoryGet(C, C.FocusGroup.Name)
+					: null;
 				if (focusItem) {
 					if (prioritySubscreen) {
 						prioritySubscreenClick(C, focusItem);
@@ -6566,10 +6691,11 @@ async function ForBetterClub() {
 						}
 					} else if (Array.isArray(item.Color)) {
 						for (let i = 0; i < item.Color.length; i++) {
-							item.Color[i] = focusItem.Color;
+							item.Color[i] = focusItem.Color ?? "Default";
 						}
 					} else {
-						item.Color = [...focusItem.Color];
+						// Both are array
+						item.Color = deepCopy(focusItem.Color);
 					}
 				}
 			}
@@ -6604,7 +6730,7 @@ async function ForBetterClub() {
 			}
 
 			debug("Clearing caches");
-			if (GLDrawCanvas.GL.textureCache) {
+			if (GLDrawCanvas.GL?.textureCache) {
 				GLDrawCanvas.GL.textureCache.clear();
 			}
 			GLDrawResetCanvas();
@@ -6632,10 +6758,10 @@ async function ForBetterClub() {
 
 	function chatRoomOverlay() {
 		SDK.hookFunction(
-			"ChatRoomDrawCharacterOverlay",
+			"ChatRoomDrawCharacterStatusIcons",
 			HOOK_PRIORITIES.AddBehaviour,
 			/**
-			 * @param {Parameters<typeof ChatRoomDrawCharacterOverlay>} args
+			 * @param {Parameters<typeof ChatRoomDrawCharacterStatusIcons>} args
 			 */
 			(args, next) => {
 				const ret = next(args);
@@ -6661,8 +6787,8 @@ async function ForBetterClub() {
 					if (C.FBC.includes("Lilian")) {
 						DrawTextFit(
 							"Lilian",
-							CharX + 300 * Zoom,
-							CharY + 40 * Zoom,
+							CharX + 290 * Zoom,
+							CharY + 30 * Zoom,
 							50 * Zoom,
 							DEVS.includes(C.MemberNumber) ? "#b33cfa" : "White",
 							"Black"
@@ -6673,20 +6799,8 @@ async function ForBetterClub() {
 							CharX + 290 * Zoom,
 							CharY + 30 * Zoom,
 							40 * Zoom,
-							DEVS.includes(C.MemberNumber) ? "#b33cfa" : "White",
+							"White",
 							"Black"
-						);
-					}
-					if (
-						C.FBC &&
-						characterStates.get(C.MemberNumber)?.clamped > Date.now()
-					) {
-						DrawImageResize(
-							ICONS.MUTE,
-							CharX + 70 * Zoom,
-							CharY + 40 * Zoom,
-							40 * Zoom,
-							40 * Zoom
 						);
 					}
 				}
@@ -6695,7 +6809,7 @@ async function ForBetterClub() {
 		);
 	}
 
-	/** @type {(target?: number, requestReply?: boolean) => void} */
+	/** @type {(target?: number | null, requestReply?: boolean) => void} */
 	function sendHello(target = null, requestReply = false) {
 		if (!settingsLoaded()) {
 			// Don't send hello until settings are loaded
@@ -6723,7 +6837,7 @@ async function ForBetterClub() {
 		}
 		if (fbcSettings.alternateArousal) {
 			fbcMessage.message.progress =
-				Player.BCEArousalProgress || Player.ArousalSettings.Progress || 0;
+				Player.BCEArousalProgress || Player.ArousalSettings?.Progress || 0;
 			fbcMessage.message.enjoyment = Player.BCEEnjoyment || 1;
 		}
 		if (fbcSettings.shareAddons) {
@@ -6758,11 +6872,8 @@ async function ForBetterClub() {
 		 * @param {ServerChatRoomMessage} data
 		 */
 		function parseBCEMessage(data) {
-			/** @type {BCEMessage} */
-			let message = {
-				type: null,
-				version: null,
-			};
+			/** @type {Partial<BCEMessage>} */
+			let message = {};
 			if (Array.isArray(data.Dictionary)) {
 				const dict = /** @type {FBCDictionaryEntry[]} */ (
 					/** @type {unknown} */ (data.Dictionary)
@@ -6779,7 +6890,7 @@ async function ForBetterClub() {
 
 		/**
 		 * @param {Character} sender
-		 * @param {BCEMessage} message
+		 * @param {Partial<BCEMessage>} message
 		 * @param {boolean} [deferred]
 		 */
 		function processBCEMessage(sender, message, deferred = false) {
@@ -6812,12 +6923,12 @@ async function ForBetterClub() {
 
 			switch (message.type) {
 				case MESSAGE_TYPES.Hello:
-					sender.FBC = message.version;
+					sender.FBC = message.version ?? "0.0";
 					sender.BCEArousal = message.alternateArousal || false;
 					sender.BCEArousalProgress =
 						message.progress || sender.ArousalSettings?.Progress || 0;
 					sender.BCEEnjoyment = message.enjoyment || 1;
-					sender.BCECapabilities = message.capabilities;
+					sender.BCECapabilities = message.capabilities ?? [];
 					if (message.replyRequested) {
 						sendHello(sender.MemberNumber);
 					}
@@ -6875,10 +6986,10 @@ async function ForBetterClub() {
 		await waitFor(() => !!Player);
 
 		let inCustomWardrobe = false,
-			/** @type {Character} */
+			/** @type {Character | null} */
 			targetCharacter = null;
 
-		/** @type {string} */
+		/** @type {string | null} */
 		let appearanceBackup = null;
 
 		let excludeBodyparts = false;
@@ -7065,6 +7176,11 @@ async function ForBetterClub() {
 					(a) => a.Asset.Group.IsDefault && !a.Asset.Group.Clothing
 				);
 				if (inCustomWardrobe && isCharacter(C) && C.IsPlayer()) {
+					if (!targetCharacter) {
+						throw new Error(
+							"targetCharacter is not defined in WardrobeFastLoad"
+						);
+					}
 					args[0] = targetCharacter;
 					C = targetCharacter;
 					args[2] = false;
@@ -7092,6 +7208,11 @@ async function ForBetterClub() {
 			(args, next) => {
 				const [C] = args;
 				if (inCustomWardrobe && isCharacter(C) && C.IsPlayer()) {
+					if (!targetCharacter) {
+						throw new Error(
+							"targetCharacter is not defined in WardrobeFastSave"
+						);
+					}
 					args[0] = targetCharacter;
 				}
 				return next(args);
@@ -7258,30 +7379,6 @@ async function ForBetterClub() {
 			}
 		);
 
-		/*
-		 * Antigarble patch for message printing
-		 * Whisper reply button
-		 */
-		patchFunction(
-			"ChatRoomMessageDisplay",
-			{
-				"div.innerHTML = msg;": `div.innerHTML = msg;
-				if (data.Type === "Whisper") {
-					let repl = document.createElement("a");
-					repl.href = "#";
-					repl.onclick = (e) => {
-						e.preventDefault();
-						ElementValue("InputChat", \`/w \${SenderCharacter.MemberNumber} \${ElementValue("InputChat").replace(/^\\/(beep|w) \\S+ ?/u, '')}\`);
-						window.InputChat.focus();
-					};
-					repl.classList.add("bce-button");
-					repl.textContent = '\u21a9\ufe0f';
-					div.prepend(repl);
-				}`,
-			},
-			"No whisper reply button in chat"
-		);
-
 		ChatRoomRegisterMessageHandler({
 			Priority: 1,
 			Description: "Anti-garbling by FBC",
@@ -7354,7 +7451,7 @@ async function ForBetterClub() {
 				if (args.length < 2) {
 					return next(args);
 				}
-				const [message, data] = args;
+				const [message, /** @type {unknown} */ data] = args;
 				if (!isString(message) || !isChatMessage(data)) {
 					return next(args);
 				}
@@ -7451,17 +7548,18 @@ async function ForBetterClub() {
 					switch (data.Type) {
 						case "Whisper":
 							{
-								const idx = data.Dictionary?.findIndex(
-									// @ts-ignore - BCX's custom dictionary entry, dictionary entries cannot be extended in TS
-									(d) => d.Tag === BCX_ORIGINAL_MESSAGE
-								);
+								const idx =
+									data.Dictionary?.findIndex(
+										// @ts-ignore - BCX's custom dictionary entry, dictionary entries cannot be extended in TS
+										(d) => d.Tag === BCX_ORIGINAL_MESSAGE
+									) ?? -1;
 								if (
 									idx >= 0 &&
 									(fbcSettings.antiAntiGarble ||
 										fbcSettings.antiAntiGarbleStrong ||
 										fbcSettings.antiAntiGarbleExtra)
 								) {
-									data.Dictionary.splice(idx, 1);
+									data.Dictionary?.splice(idx, 1);
 								}
 							}
 							break;
@@ -7534,6 +7632,7 @@ async function ForBetterClub() {
 					/** @type {() => boolean} */
 					const isWhispering = () =>
 						w.InputChat?.value.startsWith("/w ") ||
+						w.InputChat?.value.startsWith("/whisper ") ||
 						!!w.ChatRoomTargetMemberNumber;
 					if (
 						w.InputChat?.classList.contains(WHISPER_CLASS) &&
@@ -7602,7 +7701,7 @@ async function ForBetterClub() {
 					tooltipPosition
 				);
 
-				/** @type {[string, string, string, () => string, () => string, boolean, number, Position]} */
+				/** @type {[string, string, string, () => string, () => string, boolean?, number?, Position?]} */
 				const gagCheatMenuParams = fbcSettings.gagspeak
 					? [
 							displayText("Understand: Yes"),
@@ -7710,7 +7809,7 @@ async function ForBetterClub() {
 
 		Player.BCEArousalProgress = Math.min(
 			BCE_MAX_AROUSAL,
-			Player.ArousalSettings.Progress
+			Player.ArousalSettings?.Progress ?? 0
 		);
 		Player.BCEEnjoyment = 1;
 		const enjoymentMultiplier = 0.2;
@@ -7725,17 +7824,30 @@ async function ForBetterClub() {
 					// Skip player's own sync messages since we're tracking locally
 					return;
 				}
+
 				const target = ChatRoomCharacter.find(
 					(c) => c.MemberNumber === data.MemberNumber
 				);
+
 				if (!target) {
 					return;
 				}
-				target.BCEArousalProgress = Math.min(
-					BCE_MAX_AROUSAL,
-					data.Progress || 0
-				);
-				target.ArousalSettings.Progress = Math.round(target.BCEArousalProgress);
+
+				queueMicrotask(() => {
+					target.BCEArousalProgress = Math.min(
+						BCE_MAX_AROUSAL,
+						data.Progress || 0
+					);
+
+					if (!target?.ArousalSettings) {
+						logWarn("No arousal settings found for", target);
+						return;
+					}
+
+					target.ArousalSettings.Progress = Math.round(
+						target.BCEArousalProgress
+					);
+				});
 			}
 		);
 
@@ -7869,6 +7981,9 @@ async function ForBetterClub() {
 						C.BCEArousalProgress
 					);
 					if (C.BCEArousal) {
+						if (!C.ArousalSettings) {
+							throw new Error(`No arousal settings found for ${C.Name}`);
+						}
 						C.ArousalSettings.Progress = Math.round(C.BCEArousalProgress);
 						args[1] = 0;
 						return next(args);
@@ -7983,6 +8098,9 @@ async function ForBetterClub() {
 					true,
 					data.Character.MemberNumber.toString()
 				);
+				if (!Player.GhostList) {
+					Player.GhostList = [];
+				}
 				ChatRoomListManipulation(
 					Player.GhostList,
 					true,
@@ -8107,7 +8225,7 @@ async function ForBetterClub() {
 					.map((f) => {
 						const { MemberNumber, MemberName } = data.Result.find(
 							(d) => d.MemberNumber === f
-						);
+						) ?? { MemberName: "", MemberNumber: -1 };
 						return `${MemberName} (${MemberNumber})`;
 					})
 					.join(", ");
@@ -8127,7 +8245,7 @@ async function ForBetterClub() {
 					.map((f) => {
 						const { MemberNumber, MemberName } = lastFriends.find(
 							(d) => d.MemberNumber === f
-						);
+						) ?? { MemberName: "", MemberNumber: -1 };
 						return `${MemberName} (${MemberNumber})`;
 					})
 					.join(", ");
@@ -8210,10 +8328,10 @@ async function ForBetterClub() {
 			}
 
 			const sourceName = `${CharacterNickname(sourceCharacter)} (${
-				sourceCharacter.MemberNumber
+				sourceCharacter.MemberNumber ?? "-1"
 			})`;
 
-			/** @type {(item: ItemBundle) => ItemBundle} */
+			/** @type {(item: ItemBundle | null) => ItemBundle | null} */
 			function deleteUnneededMetaData(item) {
 				if (!item) {
 					return item;
@@ -8245,7 +8363,7 @@ async function ForBetterClub() {
 				if (
 					sourceCanBeMistress ||
 					sourceCharacter.MemberNumber === Player.Ownership?.MemberNumber ||
-					Player.Lovership.some(
+					Player.Lovership?.some(
 						(a) => a.MemberNumber === sourceCharacter.MemberNumber
 					)
 				) {
@@ -8255,9 +8373,9 @@ async function ForBetterClub() {
 				// Removal
 				if (
 					(oldItem?.Property?.LockedBy === "MistressPadlock" &&
-						newItem.Property?.LockedBy !== "MistressPadlock") ||
+						newItem?.Property?.LockedBy !== "MistressPadlock") ||
 					(oldItem?.Property?.LockedBy === "MistressTimerPadlock" &&
-						newItem.Property?.LockedBy !== "MistressTimerPadlock")
+						newItem?.Property?.LockedBy !== "MistressTimerPadlock")
 				) {
 					debug(
 						"Not a mistress attempting to remove mistress lock",
@@ -8269,9 +8387,9 @@ async function ForBetterClub() {
 				// Addition
 				if (
 					(oldItem?.Property?.LockedBy !== "MistressPadlock" &&
-						newItem.Property?.LockedBy === "MistressPadlock") ||
+						newItem?.Property?.LockedBy === "MistressPadlock") ||
 					(oldItem?.Property?.LockedBy !== "MistressTimerPadlock" &&
-						newItem.Property?.LockedBy === "MistressTimerPadlock")
+						newItem?.Property?.LockedBy === "MistressTimerPadlock")
 				) {
 					debug("Not a mistress attempting to add mistress lock", sourceName);
 					changes.prohibited = true;
@@ -8281,7 +8399,8 @@ async function ForBetterClub() {
 				if (
 					oldItem?.Property?.LockedBy === "MistressTimerPadlock" &&
 					Math.abs(
-						oldItem.Property?.RemoveTimer - newItem.Property?.RemoveTimer
+						mustNum(oldItem.Property?.RemoveTimer, Number.MAX_SAFE_INTEGER) -
+							mustNum(newItem?.Property?.RemoveTimer)
 					) >
 						31 * 60 * 1000
 				) {
@@ -8295,8 +8414,9 @@ async function ForBetterClub() {
 
 			// Validate lock changes
 			if (
+				newItem &&
 				newItem.Property?.LockMemberNumber !==
-				oldItem?.Property?.LockMemberNumber
+					oldItem?.Property?.LockMemberNumber
 			) {
 				if (!validateNewLockMemberNumber(sourceCharacter, newItem)) {
 					changes.prohibited = true;
@@ -8324,8 +8444,14 @@ async function ForBetterClub() {
 
 		/** @type {(sourceCharacter: Character) => void} */
 		function revertChanges(sourceCharacter) {
+			if (typeof sourceCharacter.MemberNumber !== "number") {
+				throw new Error(
+					"change from invalid source character with no member number"
+				);
+			}
+
 			const sourceName = `${CharacterNickname(sourceCharacter)} (${
-				sourceCharacter.MemberNumber
+				sourceCharacter.MemberNumber ?? "-1"
 			})`;
 			debug("Rejected changes from", sourceName);
 			fbcChatNotify(
@@ -8333,6 +8459,7 @@ async function ForBetterClub() {
 					`[Anti-Cheat] ${sourceName} tried to make suspicious changes! Appearance changes rejected. Consider telling the user to stop, whitelisting the user (if trusted friend), or blacklisting the user (if the behaviour continues, chat command: "/blacklistadd ${sourceCharacter.MemberNumber}").`
 				)
 			);
+
 			const noticeSent = noticesSent.get(sourceCharacter.MemberNumber) || 0;
 			if (Date.now() - noticeSent > 1000 * 60 * 10) {
 				noticesSent.set(sourceCharacter.MemberNumber, Date.now());
@@ -8383,6 +8510,13 @@ async function ForBetterClub() {
 				const sourceCharacter =
 					ChatRoomCharacter.find((a) => a.MemberNumber === data.Source) ||
 					(data.Source === Player.MemberNumber ? Player : null);
+
+				if (!sourceCharacter) {
+					throw new Error(
+						"change from invalid source character not in the current room"
+					);
+				}
+
 				const ignoreLocks = Player.Appearance.some(
 					(a) => a.Asset.Name === "FuturisticCollar"
 				);
@@ -8437,6 +8571,12 @@ async function ForBetterClub() {
 					) ||
 					(data.SourceMemberNumber === Player.MemberNumber ? Player : null);
 
+				if (!sourceCharacter) {
+					throw new Error(
+						"change from invalid source character not in the current room"
+					);
+				}
+
 				if (sourceCharacter.IsPlayer()) {
 					return next(args);
 				}
@@ -8461,6 +8601,11 @@ async function ForBetterClub() {
 						Player.Appearance.filter((a) => a.Asset.Group.Category === "Item")
 					)
 				);
+
+				if (!data.Character.Appearance) {
+					throw new Error("no appearance data in sync single");
+				}
+
 				const newItems = processItemBundleToMap(
 					data.Character.Appearance.filter(
 						(a) =>
@@ -8495,6 +8640,11 @@ async function ForBetterClub() {
 				const newAndChanges = Array.from(newItems.keys()).reduce(
 					(changes, cur) => {
 						const newItem = newItems.get(cur);
+						if (!newItem) {
+							throw new Error(
+								"this should never happen: newItem is null inside map loop"
+							);
+						}
 						if (!oldItems.has(cur)) {
 							// Item is new, validate it and mark as new
 							if (!validateNewLockMemberNumber(sourceCharacter, newItem)) {
@@ -8503,7 +8653,7 @@ async function ForBetterClub() {
 							changes.new++;
 							return changes;
 						}
-						const oldItem = oldItems.get(cur);
+						const oldItem = oldItems.get(cur) ?? null;
 						const result = validateSingleItemChange(
 							sourceCharacter,
 							oldItem,
@@ -8681,7 +8831,7 @@ async function ForBetterClub() {
 		w.bceStartClubSlave = async () => {
 			const managementScreen = "Management";
 
-			if (BCX?.getRuleState("block_club_slave_work").isEnforced) {
+			if (BCX?.getRuleState("block_club_slave_work")?.isEnforced) {
 				fbcSendAction(
 					displayText(
 						`BCX rules forbid $PlayerName from becoming a Club Slave.`,
@@ -8698,6 +8848,13 @@ async function ForBetterClub() {
 				)
 			);
 
+			if (!ChatRoomData) {
+				logError(
+					"ChatRoomData is null in bceStartClubSlave. Was it called outside a chat room?"
+				);
+				return;
+			}
+
 			const room = ChatRoomData.Name;
 			ChatRoomClearAllElements();
 			ServerSend("ChatRoomLeave", "");
@@ -8705,6 +8862,9 @@ async function ForBetterClub() {
 			CommonSetScreen("Room", managementScreen);
 
 			await waitFor(() => !!ManagementMistress);
+			if (!ManagementMistress) {
+				throw new Error("ManagementMistress is missing");
+			}
 
 			PoseSetActive(Player, "Kneel", false);
 
@@ -8789,8 +8949,8 @@ async function ForBetterClub() {
 		const storageKey = () =>
 			`bce-instant-messenger-state-${Player.AccountName.toLowerCase()}`;
 
-		/** @type {number | null} */
-		let activeChat = null;
+		/** @type {number} */
+		let activeChat = -1;
 
 		let unreadSinceOpened = 0;
 
@@ -8807,6 +8967,7 @@ async function ForBetterClub() {
 		};
 
 		const saveHistory = () => {
+			/** @type {Record<number, { historyRaw: RawHistory[] }>} */
 			const history = {};
 			friendMessages.forEach((friend, id) => {
 				if (friend.historyRaw.length === 0) {
@@ -8859,18 +9020,20 @@ async function ForBetterClub() {
 				return;
 			}
 
-			/** @type {{ messageType?: "Message" | "Emote" | "Action"; messageColor?: string; }?} */
-			// @ts-ignore
-			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-			const details = JSON.parse(
+			/** @type {{ messageType: "Message" | "Emote" | "Action"; messageColor?: string; }?} */
+			const details = parseJSON(
 				beep.Message?.split("\n")
 					.find((line) => line.startsWith("\uf124"))
 					?.substring(1) ?? "{}"
-			);
+			) ?? { messageType: "Message" };
+
+			if (!details.messageType) {
+				details.messageType = "Message";
+			}
 
 			/** @type {"Message" | "Emote" | "Action"} */
 			const messageType = ["Message", "Emote", "Action"].includes(
-				details?.messageType
+				details.messageType
 			)
 				? `${details.messageType}`
 				: "Message";
@@ -8896,7 +9059,9 @@ async function ForBetterClub() {
 			message.classList.add(`bce-message-${messageType}`);
 			message.setAttribute("data-time", createdAt.toLocaleString());
 
-			const author = sent ? CharacterNickname(Player) : beep.MemberName;
+			const author = sent
+				? CharacterNickname(Player)
+				: beep.MemberName ?? "<Unknown>";
 
 			switch (messageType) {
 				case "Emote":
@@ -8922,10 +9087,22 @@ async function ForBetterClub() {
 					break;
 			}
 
+			if (!Player.MemberNumber) {
+				throw new Error("Player.MemberNumber is invalid");
+			}
+
+			let authorId = Player.MemberNumber;
+			if (!sent) {
+				if (!beep.MemberNumber) {
+					throw new Error("beep.MemberNumber is invalid");
+				}
+				authorId = beep.MemberNumber;
+			}
+
 			if (!skipHistory) {
 				friend.historyRaw.push({
 					author,
-					authorId: sent ? Player.MemberNumber : beep.MemberNumber,
+					authorId,
 					message: messageText,
 					type: messageType,
 					color: messageColor,
@@ -8955,6 +9132,9 @@ async function ForBetterClub() {
 					unreadSinceOpened++;
 				}
 			}
+			/**
+			 * @returns {null}
+			 */
 			const noop = () => null;
 			processChatAugmentsForLine(
 				message,
@@ -8971,7 +9151,8 @@ async function ForBetterClub() {
 
 		/** @type {(friendId: number) => IMFriendHistory} */
 		const handleUnseenFriend = (friendId) => {
-			if (!friendMessages.has(friendId)) {
+			let msgs = friendMessages.get(friendId);
+			if (!msgs) {
 				/** @type {IMFriendHistory} */
 				const friendData = {
 					statusText: document.createElement("span"),
@@ -8991,7 +9172,7 @@ async function ForBetterClub() {
 
 				const name = document.createElement("div");
 				name.classList.add("bce-friend-list-entry-name");
-				name.textContent = Player.FriendNames.get(friendId) || "";
+				name.textContent = Player.FriendNames?.get(friendId) || "";
 				friendData.listElement.appendChild(name);
 
 				const memberNumber = document.createElement("div");
@@ -9004,14 +9185,15 @@ async function ForBetterClub() {
 				friendList.appendChild(friendData.listElement);
 
 				friendMessages.set(friendId, friendData);
+				msgs = friendData;
 			}
-			return friendMessages.get(friendId);
+			return msgs;
 		};
 
 		const history = /** @type {Record<string, {historyRaw: RawHistory[]}>} */ (
-			JSON.parse(localStorage.getItem(storageKey()) || "{}")
+			parseJSON(localStorage.getItem(storageKey()) || "{}")
 		);
-		for (const [friendIdStr, friendHistory] of Object.entries(history)) {
+		for (const [friendIdStr, friendHistory] of objEntries(history)) {
 			const friendId = parseInt(friendIdStr);
 			const friend = handleUnseenFriend(friendId);
 			friend.historyRaw = friendHistory.historyRaw;
@@ -9092,11 +9274,10 @@ async function ForBetterClub() {
 				addMessage(activeChat, true, message, false, new Date());
 				FriendListBeepLog.push({
 					...message,
-					MemberName: Player.FriendNames.get(activeChat) || "aname",
+					MemberName: Player.FriendNames?.get(activeChat) || "aname",
 					Sent: true,
 					Private: false,
 					Time: new Date(),
-					ChatRoomName: null,
 				});
 				ServerSend("AccountBeep", message);
 			}
@@ -9106,7 +9287,12 @@ async function ForBetterClub() {
 			const search = friendSearch.value.toLowerCase();
 			for (const friendId of friendMessages.keys()) {
 				const friend = friendMessages.get(friendId);
-				const friendName = Player.FriendNames.get(friendId)?.toLowerCase();
+				if (!friend) {
+					throw new Error(
+						"this should never happen, friend is null in map loop"
+					);
+				}
+				const friendName = Player.FriendNames?.get(friendId)?.toLowerCase();
 				if (search === "") {
 					friend.listElement.classList.remove("bce-hidden");
 				} else if (
@@ -9142,6 +9328,9 @@ async function ForBetterClub() {
 								(forbid && !allowedMembers.includes(f))
 				)) {
 					const f = friendMessages.get(friendId);
+					if (!f) {
+						throw new Error("this should never happen, f is null in map loop");
+					}
 					f.online = false;
 					f.statusText.textContent = displayText("Offline");
 					f.listElement.classList.remove(onlineClass);
@@ -9164,8 +9353,8 @@ async function ForBetterClub() {
 					const notA = !a.classList.contains(onlineClass);
 					const notB = !b.classList.contains(onlineClass);
 					if ((notA && notB) || (!notA && !notB)) {
-						const aUpdatedAt = a.getAttribute("data-last-updated");
-						const bUpdatedAt = b.getAttribute("data-last-updated");
+						const aUpdatedAt = a.getAttribute("data-last-updated") ?? "";
+						const bUpdatedAt = b.getAttribute("data-last-updated") ?? "";
 						const au = /^\d+$/u.test(aUpdatedAt) ? parseInt(aUpdatedAt) : 0;
 						const bu = /^\d+$/u.test(bUpdatedAt) ? parseInt(bUpdatedAt) : 0;
 						return bu - au;
@@ -9302,7 +9491,7 @@ async function ForBetterClub() {
 			 * @param {Parameters<typeof NotificationRaise>} args
 			 */
 			(args, next) => {
-				if (args[0] === "Beep" && args[1].body) {
+				if (args[0] === "Beep" && args[1]?.body) {
 					args[1].body = bceStripBeepMetadata(args[1].body);
 				}
 				return next(args);
@@ -9376,6 +9565,31 @@ async function ForBetterClub() {
 		);
 	}
 
+	/**
+	 * Convert old {@link ItemProperties.Type} remnants into {@link ItemProperties.TypeRecord} in the passed item bundles.
+	 * @param {ItemBundle[]} bundleList
+	 */
+	function sanitizeBundles(bundleList) {
+		if (!Array.isArray(bundleList)) {
+			return bundleList;
+		}
+		return bundleList.map((bundle) => {
+			if (
+				typeof bundle.Property?.Type === "string" &&
+				!CommonIsObject(bundle.Property?.TypeRecord)
+			) {
+				const asset = AssetGet("Female3DCG", bundle.Group, bundle.Name);
+				if (asset) {
+					bundle.Property.TypeRecord = ExtendedItemTypeToRecord(
+						asset,
+						bundle.Property.Type
+					);
+				}
+			}
+			return bundle;
+		});
+	}
+
 	/** @type {(wardrobe: ItemBundle[][]) => ItemBundle[][]} */
 	function loadExtendedWardrobe(wardrobe) {
 		if (fbcSettings.extendedWardrobe) {
@@ -9384,9 +9598,10 @@ async function ForBetterClub() {
 		}
 
 		const wardrobeData =
-			Player.ExtensionSettings.FBCWardrobe || Player.OnlineSettings.BCEWardrobe;
+			Player.ExtensionSettings.FBCWardrobe ||
+			Player.OnlineSettings?.BCEWardrobe;
 		if (wardrobeData) {
-			if (Player.OnlineSettings.BCEWardrobe) {
+			if (Player.OnlineSettings?.BCEWardrobe) {
 				Player.ExtensionSettings.FBCWardrobe = wardrobeData;
 				ServerPlayerExtensionSettingsSync("FBCWardrobe");
 				logInfo("Migrated wardrobe from OnlineSettings to ExtensionSettings");
@@ -9394,7 +9609,7 @@ async function ForBetterClub() {
 			}
 			try {
 				const additionalItemBundle = /** @type {ItemBundle[][]} */ (
-					JSON.parse(LZString.decompressFromUTF16(wardrobeData))
+					parseJSON(LZString.decompressFromUTF16(wardrobeData))
 				);
 				if (isWardrobe(additionalItemBundle)) {
 					for (let i = DEFAULT_WARDROBE_SIZE; i < EXPANDED_WARDROBE_SIZE; i++) {
@@ -9402,7 +9617,7 @@ async function ForBetterClub() {
 						if (additionalIdx >= additionalItemBundle.length) {
 							break;
 						}
-						wardrobe[i] = additionalItemBundle[additionalIdx];
+						wardrobe[i] = sanitizeBundles(additionalItemBundle[additionalIdx]);
 					}
 				}
 			} catch (e) {
@@ -9483,7 +9698,7 @@ async function ForBetterClub() {
 				}
 				continue;
 			}
-			const contents = node.textContent.trim(),
+			const contents = node.textContent?.trim() ?? "",
 				words = [contents];
 
 			originalText += node.textContent;
@@ -9505,7 +9720,7 @@ async function ForBetterClub() {
 				const url = bceParseUrl(words[i].replace(/(^\(+|\)+$)/gu, ""));
 				if (url) {
 					// Embed or link
-					/** @type {HTMLElement | Text} */
+					/** @type {HTMLElement | Text | null} */
 					let domNode = null;
 					const linkNode = document.createElement("a");
 					newChildren.push(linkNode);
@@ -9541,19 +9756,27 @@ async function ForBetterClub() {
 										callback: (act) => {
 											if (act === "submit") {
 												sessionCustomOrigins.set(url.origin, "allowed");
+
 												const parent = target.parentElement;
+												if (!parent) {
+													throw new Error("clicked promptTrust has no parent");
+												}
 												parent.removeChild(target);
+
 												const name = parent.querySelector(".ChatMessageName");
 												parent.innerHTML = "";
 												if (name) {
 													parent.appendChild(name);
 													parent.appendChild(document.createTextNode(" "));
 												}
-												parent.appendChild(
-													document.createTextNode(
-														parent.getAttribute("bce-original-text")
-													)
-												);
+
+												const ogText = parent.getAttribute("bce-original-text");
+												if (!ogText) {
+													throw new Error(
+														"clicked promptTrust has no original text"
+													);
+												}
+												parent.appendChild(document.createTextNode(ogText));
 												processChatAugmentsForLine(
 													chatMessageElement,
 													scrollToEnd
@@ -9604,7 +9827,7 @@ async function ForBetterClub() {
 		let open = false;
 		/**
 		 * @param {string} origin
-		 * @param {"image" | "music"} type
+		 * @param {"image" | "music" | null} type
 		 */
 		function showCustomContentDomainCheckWarning(origin, type = null) {
 			if (open) {
@@ -9777,7 +10000,10 @@ async function ForBetterClub() {
 			 */
 			(args, next) => {
 				if (fbcSettings.autoStruggle) {
-					if (StruggleProgressFlexCircles.length > 0) {
+					if (
+						StruggleProgressFlexCircles &&
+						StruggleProgressFlexCircles.length > 0
+					) {
 						StruggleProgressFlexCircles.splice(0, 1);
 						return true;
 					}
@@ -9798,7 +10024,10 @@ async function ForBetterClub() {
 			if (StruggleProgressCurrentMinigame === "Strength") {
 				StruggleStrengthProcess(false);
 			} else if (StruggleProgressCurrentMinigame === "Flexibility") {
-				if (StruggleProgressFlexCircles?.length > 0) {
+				if (
+					StruggleProgressFlexCircles &&
+					StruggleProgressFlexCircles.length > 0
+				) {
 					StruggleFlexibilityProcess(false);
 				}
 			}
@@ -9889,6 +10118,11 @@ async function ForBetterClub() {
 			Player?.Appearance?.some((a) => a.Asset.Name === "Emoticon")
 		);
 		const emoticon = Player.Appearance.find((a) => a.Asset.Name === "Emoticon");
+
+		if (!emoticon) {
+			throw new Error("Could not find emoticon in Player appearance.");
+		}
+
 		if (Array.isArray(emoticon.Asset.AllowEffect)) {
 			emoticon.Asset.AllowEffect.push("Leash");
 		} else {
@@ -9918,6 +10152,9 @@ async function ForBetterClub() {
 		const script = document.createElement("script");
 		const notifierScript = document.createElement("script");
 		frame.onload = () => {
+			if (!frame.contentDocument) {
+				throw new Error("frame.contentDocument is null onload");
+			}
 			frame.contentDocument.head.appendChild(notifierScript);
 			frame.contentDocument.head.appendChild(script);
 		};
@@ -10157,14 +10394,15 @@ async function ForBetterClub() {
 		const profiles = db.table("profiles");
 		const notes = db.table("notes");
 
-		/** @type {() => Promise<{ quota: number; usage: number }>} */
 		async function readQuota() {
 			try {
 				const { quota, usage } = await navigator.storage.estimate();
 				debug(
-					`current quota usage ${usage?.toLocaleString()} out of maximum ${quota?.toLocaleString()}`
+					`current quota usage ${
+						usage?.toLocaleString() ?? "?"
+					} out of maximum ${quota?.toLocaleString() ?? "?"}`
 				);
-				return { quota, usage };
+				return { quota: quota ?? -1, usage: usage ?? 0 };
 			} catch (e) {
 				logError("reading storage quota information", e);
 				return { quota: -1, usage: -1 };
@@ -10200,6 +10438,7 @@ async function ForBetterClub() {
 			const nick = characterBundle.Nickname;
 
 			// Delete unnecessary data
+			/** @type {(keyof ServerAccountDataSynced)[]} */
 			const unnecessaryFields = [
 				"ActivePose",
 				"Inventory",
@@ -10216,7 +10455,7 @@ async function ForBetterClub() {
 				delete characterBundle[field];
 			}
 
-			debug(`saving profile of ${nick} (${name})`);
+			debug(`saving profile of ${nick ?? name} (${name})`);
 			try {
 				await profiles.put({
 					memberNumber: characterBundle.MemberNumber,
@@ -10270,8 +10509,17 @@ async function ForBetterClub() {
 			 * @param {Parameters<typeof InformationSheetRun>} args
 			 */
 			(args, next) => {
+				if (!InformationSheetSelection) {
+					throw new Error(
+						"InformationSheetSelection is null in InformationSheetRun"
+					);
+				}
 				if (InformationSheetSelection.BCESeen) {
-					w.MainCanvas.getContext("2d").textAlign = "left";
+					const ctx = w.MainCanvas.getContext("2d");
+					if (!ctx) {
+						throw new Error("could not get canvas 2d context");
+					}
+					ctx.textAlign = "left";
 					DrawText(
 						displayText("Last seen: ") +
 							new Date(InformationSheetSelection.BCESeen).toLocaleString(),
@@ -10280,7 +10528,7 @@ async function ForBetterClub() {
 						"grey",
 						"black"
 					);
-					w.MainCanvas.getContext("2d").textAlign = "center";
+					ctx.textAlign = "center";
 				}
 				return next(args);
 			}
@@ -10294,14 +10542,16 @@ async function ForBetterClub() {
 				const profile = await profiles.get(memberNumber);
 				const C = CharacterLoadOnline(
 					/** @type {ServerAccountDataSynced} */ (
-						JSON.parse(profile.characterBundle)
+						parseJSON(profile.characterBundle)
 					),
 					memberNumber
 				);
 				C.BCESeen = profile.seen;
 				if (CurrentScreen === "ChatRoom") {
 					hideChatRoomElements();
-					ChatRoomBackground = ChatRoomData.Background;
+					if (ChatRoomData) {
+						ChatRoomBackground = ChatRoomData.Background;
+					}
 				}
 				InformationSheetLoadCharacter(C);
 			} catch (e) {
@@ -10384,6 +10634,13 @@ async function ForBetterClub() {
 		}
 
 		function showNoteInput() {
+			if (
+				!InformationSheetSelection ||
+				!InformationSheetSelection.MemberNumber
+			) {
+				throw new Error("invalid InformationSheetSelection in notes");
+			}
+
 			inNotes = true;
 			noteInput.classList.remove("bce-hidden");
 			noteInput.value = "Loading...";
@@ -10496,6 +10753,14 @@ async function ForBetterClub() {
 					if (MouseIn(1720, 60, 90, 90)) {
 						(async function () {
 							await quotaSafetyCheck();
+
+							if (
+								!InformationSheetSelection ||
+								!InformationSheetSelection.MemberNumber
+							) {
+								throw new Error("invalid InformationSheetSelection in notes");
+							}
+
 							// Save note
 							await notes.put({
 								memberNumber: InformationSheetSelection.MemberNumber,
@@ -10596,7 +10861,7 @@ async function ForBetterClub() {
 					const div = document.createElement("div");
 					div.classList.add("ChatMessage", "bce-pending");
 					div.setAttribute("data-time", ChatRoomCurrentTime());
-					div.setAttribute("data-sender", Player.MemberNumber.toString());
+					div.setAttribute("data-sender", Player.MemberNumber?.toString());
 					div.setAttribute("data-nonce", nonce.toString());
 					switch (args[1].Type) {
 						case "Chat":
@@ -10604,7 +10869,7 @@ async function ForBetterClub() {
 								div.classList.add("ChatMessageChat");
 								const name = document.createElement("span");
 								name.classList.add("ChatMessageName");
-								name.style.color = Player.LabelColor || null;
+								name.style.color = Player.LabelColor || "";
 								name.textContent = CharacterNickname(Player);
 								div.appendChild(name);
 								div.appendChild(
@@ -10636,8 +10901,9 @@ async function ForBetterClub() {
 					}
 					div.appendChild(loader);
 					const scroll = ElementIsScrolledToEnd("TextAreaChatLog");
-					if (document.getElementById("TextAreaChatLog")) {
-						document.getElementById("TextAreaChatLog").appendChild(div);
+					const textarea = document.getElementById("TextAreaChatLog");
+					if (textarea) {
+						textarea.appendChild(div);
 						if (scroll) {
 							ElementScrollToEnd("TextAreaChatLog");
 						}
@@ -10684,13 +10950,13 @@ async function ForBetterClub() {
 					}
 					try {
 						const craft = /** @type {CraftingItem} */ (
-							JSON.parse(LZString.decompressFromBase64(str))
+							parseJSON(LZString.decompressFromBase64(str))
 						);
 						if (!isNonNullObject(craft)) {
 							logError(craft);
 							throw new Error(`invalid craft type ${typeof craft} ${str}`);
 						}
-						for (const [key, value] of Object.entries(craft)) {
+						for (const [key, value] of objEntries(craft)) {
 							if (
 								!isString(value) &&
 								!Number.isInteger(value) &&
@@ -10821,11 +11087,13 @@ async function ForBetterClub() {
 			(args, next) => {
 				const [C] = args;
 				isExpanded = !!C.ArousalZoom;
-				const activityGoing = C.ArousalSettings?.ProgressTimer > 0;
-				const vibed = C.ArousalSettings?.VibratorLevel > 0;
+				const progressTimer = C.ArousalSettings?.ProgressTimer ?? 0;
+				const activityGoing = progressTimer > 0;
+				const vibratorLevel = C.ArousalSettings?.VibratorLevel ?? 0;
+				const vibed = vibratorLevel > 0;
+				const progress = C.ArousalSettings?.Progress ?? 0;
 				const vibedOnEdge =
-					(C.IsEdged() || C.HasEffect("DenialMode")) &&
-					C.ArousalSettings?.Progress >= 95;
+					(C.IsEdged() || C.HasEffect("DenialMode")) && progress >= 95;
 				increasing = activityGoing || (vibed && !vibedOnEdge);
 				const ret = next(args);
 				isExpanded = false;
@@ -11021,7 +11289,7 @@ async function ForBetterClub() {
 			showModal({
 				...opts,
 				callback: (action, inputValue) => {
-					resolve([action, inputValue]);
+					resolve([action, inputValue ?? null]);
 				},
 			});
 		});
@@ -11214,28 +11482,40 @@ async function ForBetterClub() {
 	}
 
 	function hideChatRoomElements() {
-		document.getElementById("InputChat").style.display = "none";
-		document.getElementById("TextAreaChatLog").style.display = "none";
+		const chatRoomElements = ["InputChat", "TextAreaChatLog"];
+		for (const id of chatRoomElements) {
+			const el = document.getElementById(id);
+			if (el) {
+				el.style.display = "none";
+			}
+		}
 		ChatRoomChatHidden = true;
 	}
 
 	(function () {
 		const sendHeartbeat = () => {
+			/**
+			 * @type {{
+			 * Version: string;
+			 * GameVersion: string;
+			 * InRoom: boolean;
+			 * InPrivate: boolean;
+			 * InTampermonkey: boolean;
+			 * FUSAM: boolean;
+			 * FBCviaFUSAM: boolean;} & Partial<Record<keyof typeof addonTypes, string>>}
+			 */
 			const payload = {
 				Version: FBC_VERSION,
 				GameVersion,
 				// !! to avoid passing room name to statbot, only presence inside a room or not
 				InRoom: !!Player.LastChatRoom,
-				InPrivate:
-					// @ts-ignore -- LastChatRoomPrivate removed in R99
-					!!Player.LastChatRoomPrivate || !!Player.LastChatRoom?.Private,
-				// @ts-ignore
+				InPrivate: !!Player.LastChatRoom?.Private,
 				// eslint-disable-next-line camelcase
 				InTampermonkey: typeof GM_info !== "undefined",
 				FUSAM: !!w.FUSAM?.present,
 				FBCviaFUSAM: w.FUSAM?.addons?.FBC?.status === "loaded",
 			};
-			for (const [key, value] of Object.entries(addonTypes)) {
+			for (const [key, value] of objEntries(addonTypes)) {
 				if (
 					bcModSdk.getModsInfo().some((mod) => mod.name === key) &&
 					value === "none"
@@ -11267,13 +11547,20 @@ async function ForBetterClub() {
 	})();
 
 	/**
-	 * @param {string} target
+	 * @param {string | null} target
 	 * @param {boolean} [limitVisible]
 	 */
 	function findDrawnCharacters(target, limitVisible = false) {
-		const baseList = limitVisible
-			? ChatRoomCharacterDrawlist
-			: ChatRoomCharacter;
+		let baseList = limitVisible ? ChatRoomCharacterDrawlist : ChatRoomCharacter;
+
+		if (ChatRoomMapVisible) {
+			baseList = baseList.filter(ChatRoomMapCharacterIsVisible);
+		}
+
+		if (target === null) {
+			return baseList;
+		}
+
 		let targetMembers = [];
 		if (/^\d+$/u.test(target)) {
 			targetMembers = [
@@ -11287,12 +11574,15 @@ async function ForBetterClub() {
 					c.Name.split(" ")[0].toLowerCase() === target?.toLowerCase()
 			);
 		}
-		return targetMembers.filter((c) => c);
+		return targetMembers.filter(Boolean);
 	}
 
 	/** @type {(x: number, y: number, width: number, text: string, align: "left" | "center") => void} */
 	function drawTooltip(x, y, width, text, align) {
 		const canvas = w.MainCanvas.getContext("2d");
+		if (!canvas) {
+			throw new Error("could not get canvas 2d context");
+		}
 		const bak = canvas.textAlign;
 		canvas.textAlign = align;
 		DrawRect(x, y, width, 65, "#FFFF88");
@@ -11308,11 +11598,16 @@ async function ForBetterClub() {
 	}
 
 	/** @type {(text: string, x: number, y: number, width: number, color: string, backColor?: string) => void} */
-	function drawTextFitLeft(text, x, y, width, color, backColor = null) {
-		const bk = w.MainCanvas.getContext("2d").textAlign;
-		w.MainCanvas.getContext("2d").textAlign = "left";
+	// eslint-disable-next-line no-undefined
+	function drawTextFitLeft(text, x, y, width, color, backColor = undefined) {
+		const ctx = w.MainCanvas.getContext("2d");
+		if (!ctx) {
+			throw new Error("could not get canvas 2d context");
+		}
+		const bk = ctx.textAlign;
+		ctx.textAlign = "left";
 		DrawTextFit(text, x, y, width, color, backColor);
-		w.MainCanvas.getContext("2d").textAlign = bk;
+		ctx.textAlign = bk;
 	}
 
 	/** @type {(cb: () => void, intval: number) => void} */
@@ -11334,12 +11629,16 @@ async function ForBetterClub() {
 		);
 	}
 
-	/** @type {(addon: string) => boolean} */
+	/**
+	 * @param {string} addon
+	 */
 	function handledByFUSAM(addon) {
-		return w.FUSAM?.addons && addon in w.FUSAM.addons;
+		return !!w.FUSAM?.addons && addon in w.FUSAM.addons;
 	}
 
-	/** @type {(ms: number) => Promise<void>} */
+	/**
+	 * @param {number} ms
+	 */
 	function sleep(ms) {
 		// eslint-disable-next-line no-promise-executor-return
 		return new Promise((resolve) => setTimeout(resolve, ms));
@@ -11352,7 +11651,7 @@ async function ForBetterClub() {
 
 	/** @type {(o: unknown) => o is Record<string, any>} */
 	function isNonNullObject(o) {
-		return o && typeof o === "object" && !Array.isArray(o);
+		return !!o && typeof o === "object" && !Array.isArray(o);
 	}
 
 	/** @type {(m: unknown) => m is ServerChatRoomMessage} */
@@ -11400,10 +11699,48 @@ async function ForBetterClub() {
 		);
 	}
 
+	/**
+	 * @param {number} [id]
+	 * @param {number} [def]
+	 */
+	function mustNum(id, def = -Number.MAX_SAFE_INTEGER) {
+		return id ?? def;
+	}
+
 	/** @type {<T>(o: T) => T} */
 	function deepCopy(o) {
 		// eslint-disable-next-line
 		return structuredClone(o);
+	}
+
+	/**
+	 * @template T
+	 * @param {T} obj
+	 */
+	function objEntries(obj) {
+		if (!isNonNullObject(obj)) {
+			return [];
+		}
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-return
+		return /** @type {[keyof T, T[keyof T]][]} */ (Object.entries(obj));
+	}
+
+	/**
+	 * @template T
+	 * @param {string | null} jsonString
+	 * @throws {SyntaxError} If the string to parse is not valid JSON.
+	 */
+	function parseJSON(jsonString) {
+		if (jsonString === null) {
+			return null;
+		}
+		try {
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-return
+			return /** @type {T} */ (/** @type {unknown} */ (JSON.parse(jsonString)));
+		} catch (e) {
+			logError("parsing JSON", e);
+			return null;
+		}
 	}
 
 	function deepEqual(a, b)
